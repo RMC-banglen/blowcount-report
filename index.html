@@ -614,17 +614,28 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   );
 }
 
+function monthBounds(m) {
+  if (!m) return [null, null];
+  const [y, mm] = m.split('-').map(Number);
+  return [m + '-01', m + '-' + String(new Date(y, mm, 0).getDate()).padStart(2, '0')];
+}
+
 function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv }) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const currentMonth = todayIso.slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
   const [filterSite, setFilterSite] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterMonth, setFilterMonth] = useState(currentMonth);
+
+  const reportMonths = [...new Set(reports.map(r => r.date.slice(0, 7)))];
+  const monthOptions = [...new Set([currentMonth, ...reportMonths])].sort().reverse();
+  const [monthFrom, monthTo] = monthBounds(filterMonth);
 
   let filtered = reports.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   if (filterWorker) filtered = filtered.filter(r => r.worker === filterWorker);
   if (filterSite) filtered = filtered.filter(r => r.site.trim() === filterSite);
-  if (filterDateFrom) filtered = filtered.filter(r => r.date >= filterDateFrom);
-  if (filterDateTo) filtered = filtered.filter(r => r.date <= filterDateTo);
+  if (monthFrom) filtered = filtered.filter(r => r.date >= monthFrom);
+  if (monthTo) filtered = filtered.filter(r => r.date <= monthTo);
 
   return (
     <div>
@@ -642,18 +653,24 @@ function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPri
             <option value="">ทุกหน่วยงาน</option>
             {knownSites.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} title="จากวันที่" style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }} />
-            <span style={{ color: '#9a958d', fontSize: 13 }}>ถึง</span>
-            <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} title="ถึงวันที่" style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }} />
-          </div>
-          <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterDateFrom(''); setFilterDateTo(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
+          <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
+            <option value="">ทุกเดือน</option>
+            {monthOptions.map(m => {
+              const [yy, mm] = m.split('-').map(Number);
+              return <option key={m} value={m}>{MONTHS_TH[mm - 1]} {yy + 543}</option>;
+            })}
+          </select>
+          <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
           <button onClick={() => onExportCsv(filtered)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export CSV</button>
-          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom, filterDateTo })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
+          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
 
-      {filtered.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>ยังไม่มีรายงาน — เมื่อพนักงานกรอกข้อมูล จะแสดงที่นี่</div>}
+      {filtered.length === 0 && (
+        <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>
+          {filterMonth === currentMonth ? ('วันนี้ ' + thDate(todayIso) + ' ยังไม่มีข้อมูล') : 'ยังไม่มีรายงาน — เมื่อพนักงานกรอกข้อมูล จะแสดงที่นี่'}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filtered.map(r => (

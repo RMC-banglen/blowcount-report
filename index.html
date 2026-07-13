@@ -137,7 +137,7 @@ function PickerButton({ active, label, sub, onClick }) {
   );
 }
 
-function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab }) {
+function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout }) {
   const adminTabs = [
     { key: 'reports', label: 'รายงานรวม' }, { key: 'piles', label: 'ยอดสะสมรายเสา' },
     { key: 'monthly', label: 'สรุปรายเดือน' }, { key: 'car', label: 'ค่ารถออกสนาม' }, { key: 'workers', label: 'พนักงาน' },
@@ -167,7 +167,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab }) {
               fontWeight: 600, fontSize: 13, cursor: 'pointer'
             }}>{t.label}</button>
           ))}
-          <button onClick={onHome} style={{ padding: '8px 14px', borderRadius: 4, border: '1px solid #3a3e45', background: '#2c2f35', color: '#c8c3bb', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>← หน้าแรก</button>
+          <button onClick={onLogout} style={{ padding: '8px 14px', borderRadius: 4, border: '1px solid #4a4f58', background: '#2c2f35', color: '#c8c3bb', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>ออกจากระบบ</button>
         </div>
       )}
     </div>
@@ -521,7 +521,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
   );
 }
 
-function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit, onLogout }) {
+function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const isOwner = admins.some(a => a.name === currentName && a.role === 'owner');
   const [addOpen, setAddOpen] = useState(false);
   const [aName, setAName] = useState('');
@@ -565,13 +565,10 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit, onLogout
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>จัดการผู้ดูแลระบบ</div>
-          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b>{isOwner && <span style={{ color: '#6dbf5b', fontWeight: 700 }}> (แอดมินหลัก)</span>} · ผู้ดูแลทั้งหมด {admins.length} คน</div>
-          {!isOwner && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 4 }}>เฉพาะแอดมินหลักเท่านั้นที่เพิ่ม/ลบผู้ดูแลได้</div>}
-        </div>
-        <button onClick={onLogout} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>ออกจากระบบ</button>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>จัดการผู้ดูแลระบบ</div>
+        <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b>{isOwner && <span style={{ color: '#6dbf5b', fontWeight: 700 }}> (แอดมินหลัก)</span>} · ผู้ดูแลทั้งหมด {admins.length} คน</div>
+        {!isOwner && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 4 }}>เฉพาะแอดมินหลักเท่านั้นที่เพิ่ม/ลบผู้ดูแลได้</div>}
       </div>
 
       {isOwner && (
@@ -1324,7 +1321,7 @@ function App() {
   return (
     <div style={{ minHeight: '100vh', background: '#23262b', color: '#e9e6e1' }}>
       <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={tab}
-        onHome={() => setView('home')} onAdminTab={setTab} />
+        onHome={() => setView('home')} onAdminTab={setTab} onLogout={logoutAdmin} />
 
       {view === 'home' && <HomeView onGoAdmin={() => setView('admin')} />}
 
@@ -1348,7 +1345,7 @@ function App() {
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
           {tab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
-          {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} onLogout={logoutAdmin} />}
+          {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
         </div>
       )}
     </div>

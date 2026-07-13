@@ -460,92 +460,135 @@ function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites,
   );
 }
 
+const PIN_RE = /^\d{4}$/;
+const onlyDigits4 = v => v.replace(/\D/g, '').slice(0, 4);
+const pinBoxStyle = { ...inputStyle, textAlign: 'center', fontSize: 26, letterSpacing: 10, fontWeight: 800 };
+
 function AdminLoginView({ admins, onSetup, onLogin }) {
   const firstUse = admins.length === 0;
+  const [selected, setSelected] = useState(null);
   const [name, setName] = useState('');
-  const [pw, setPw] = useState('');
-  const [pw2, setPw2] = useState('');
+  const [pin, setPin] = useState('');
+  const [pin2, setPin2] = useState('');
   const [error, setError] = useState('');
 
   const submitSetup = async () => {
     if (!name.trim()) return setError('กรุณากรอกชื่อผู้ดูแล');
-    if (pw.length < 4) return setError('รหัสผ่านอย่างน้อย 4 ตัวอักษร');
-    if (pw !== pw2) return setError('รหัสผ่านไม่ตรงกัน');
-    await onSetup(name.trim(), pw);
+    if (!PIN_RE.test(pin)) return setError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
+    if (pin !== pin2) return setError('รหัส PIN ไม่ตรงกัน');
+    await onSetup(name.trim(), pin);
   };
   const submitLogin = async () => {
-    const ok = await onLogin(name.trim(), pw);
-    if (!ok) setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    const ok = await onLogin(selected, pin);
+    if (!ok) { setError('รหัส PIN ไม่ถูกต้อง'); setPin(''); }
   };
-  const submit = firstUse ? submitSetup : submitLogin;
-  const onKey = (e) => { if (e.key === 'Enter') submit(); };
+  const onKey = (e, fn) => { if (e.key === 'Enter') fn(); };
+
+  if (firstUse) {
+    return (
+      <div style={{ maxWidth: 380, margin: '0 auto', padding: '60px 20px' }}>
+        <div style={{ ...card, overflow: 'hidden' }}>
+          <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>ตั้งค่าผู้ดูแลคนแรก</div>
+            <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>ยังไม่มีผู้ดูแล — สร้างบัญชีแรกที่นี่</div>
+          </div>
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ชื่อผู้ดูแล</span>
+              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="เช่น แอดมิน" style={inputStyle} autoFocus />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>รหัส PIN (4 หลัก)</span>
+              <input type="password" inputMode="numeric" maxLength={4} value={pin} onChange={e => { setPin(onlyDigits4(e.target.value)); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="••••" style={pinBoxStyle} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ยืนยันรหัส PIN</span>
+              <input type="password" inputMode="numeric" maxLength={4} value={pin2} onChange={e => { setPin2(onlyDigits4(e.target.value)); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="••••" style={pinBoxStyle} />
+            </label>
+            {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
+            <button onClick={submitSetup} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>สร้างผู้ดูแลและเข้าสู่ระบบ</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selected) {
+    return (
+      <div style={{ maxWidth: 460, margin: '0 auto', padding: '60px 20px' }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4, textAlign: 'center' }}>เข้าสู่หน้าแอดมิน</div>
+        <div style={{ fontSize: 13, color: '#9a958d', marginBottom: 20, textAlign: 'center' }}>เลือกชื่อของคุณ</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {admins.map(a => (
+            <button key={a.name} onClick={() => { setSelected(a.name); setPin(''); setError(''); }} style={{ ...card, padding: '14px 18px', textAlign: 'left', fontSize: 15, fontWeight: 700, color: '#e9e6e1', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{a.name}{a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}</span>
+              <span style={{ color: '#9a958d' }}>→</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 380, margin: '0 auto', padding: '60px 20px' }}>
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>{firstUse ? 'ตั้งค่าผู้ดูแลคนแรก' : 'เข้าสู่หน้าแอดมิน'}</div>
-          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>{firstUse ? 'ยังไม่มีผู้ดูแล — สร้างบัญชีแรกที่นี่' : 'สำหรับส่วนกลางเท่านั้น'}</div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>{selected}</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>กรอกรหัส PIN เพื่อเข้าสู่ระบบ</div>
         </div>
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={labelStyle}>ชื่อผู้ดูแล</span>
-            <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={onKey} placeholder="เช่น แอดมิน" style={inputStyle} autoFocus />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={labelStyle}>รหัสผ่าน</span>
-            <input type="password" value={pw} onChange={e => { setPw(e.target.value); setError(''); }} onKeyDown={onKey} placeholder="กรอกรหัสผ่าน" style={inputStyle} />
-          </label>
-          {firstUse && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>ยืนยันรหัสผ่าน</span>
-              <input type="password" value={pw2} onChange={e => { setPw2(e.target.value); setError(''); }} onKeyDown={onKey} placeholder="กรอกอีกครั้ง" style={inputStyle} />
-            </label>
-          )}
+          <input type="password" inputMode="numeric" autoFocus value={pin} onChange={e => { setPin(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitLogin)} placeholder="PIN" style={pinBoxStyle} />
           {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
-          <button onClick={submit} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>
-            {firstUse ? 'สร้างผู้ดูแลและเข้าสู่ระบบ' : 'เข้าสู่ระบบ'}
-          </button>
+          <button onClick={submitLogin} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>เข้าสู่ระบบ</button>
+          <button onClick={() => { setSelected(null); setPin(''); setError(''); }} style={{ background: 'none', border: 'none', color: '#9a958d', fontSize: 13, cursor: 'pointer', padding: 4 }}>← เลือกชื่ออื่น</button>
         </div>
       </div>
     </div>
   );
 }
 
-function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword, onLogout }) {
+function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit, onLogout }) {
   const isOwner = admins.some(a => a.name === currentName && a.role === 'owner');
+  const [addOpen, setAddOpen] = useState(false);
   const [aName, setAName] = useState('');
-  const [aPw, setAPw] = useState('');
-  const [aPw2, setAPw2] = useState('');
+  const [aPin, setAPin] = useState('');
+  const [aPin2, setAPin2] = useState('');
   const [aError, setAError] = useState('');
-  const [aOk, setAOk] = useState('');
-  const [cOld, setCOld] = useState('');
-  const [cNew, setCNew] = useState('');
-  const [cNew2, setCNew2] = useState('');
-  const [cError, setCError] = useState('');
-  const [cOk, setCOk] = useState('');
 
-  const add = async () => {
-    setAOk('');
+  const [editTarget, setEditTarget] = useState(null);
+  const [eName, setEName] = useState('');
+  const [ePin, setEPin] = useState('');
+  const [ePin2, setEPin2] = useState('');
+  const [eError, setEError] = useState('');
+
+  const pinInput = { ...inputStyle, padding: '10px 12px' };
+
+  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPin(''); setAPin2(''); setAError(''); };
+  const submitAdd = async () => {
     const n = aName.trim();
     if (!n) return setAError('กรุณากรอกชื่อผู้ดูแล');
     if (admins.some(a => a.name === n)) return setAError('ชื่อ "' + n + '" มีอยู่แล้ว');
-    if (aPw.length < 4) return setAError('รหัสผ่านอย่างน้อย 4 ตัวอักษร');
-    if (aPw !== aPw2) return setAError('รหัสผ่านไม่ตรงกัน');
-    await onAdd(n, aPw);
-    setAName(''); setAPw(''); setAPw2(''); setAError('');
-    setAOk('✓ เพิ่มผู้ดูแล "' + n + '" แล้ว');
+    if (!PIN_RE.test(aPin)) return setAError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
+    if (aPin !== aPin2) return setAError('รหัส PIN ไม่ตรงกัน');
+    await onAdd(n, aPin);
+    setAddOpen(false);
   };
-  const change = async () => {
-    setCOk('');
-    if (cNew.length < 4) return setCError('รหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร');
-    if (cNew !== cNew2) return setCError('รหัสผ่านใหม่ไม่ตรงกัน');
-    const ok = await onChangePassword(cOld, cNew);
-    if (!ok) return setCError('รหัสผ่านเดิมไม่ถูกต้อง');
-    setCOld(''); setCNew(''); setCNew2(''); setCError('');
-    setCOk('✓ เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
+
+  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPin(''); setEPin2(''); setEError(''); };
+  const submitEdit = async () => {
+    const n = eName.trim();
+    if (!n) return setEError('กรุณากรอกชื่อผู้ดูแล');
+    if (n !== editTarget && admins.some(a => a.name === n)) return setEError('ชื่อ "' + n + '" มีอยู่แล้ว');
+    let hash = null;
+    if (ePin || ePin2) {
+      if (!PIN_RE.test(ePin)) return setEError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
+      if (ePin !== ePin2) return setEError('รหัส PIN ไม่ตรงกัน');
+      hash = await sha256Hex(ePin);
+    }
+    await onEdit(editTarget, n, hash);
+    setEditTarget(null);
   };
-  const pwInput = { ...inputStyle, padding: '10px 12px' };
 
   return (
     <div>
@@ -558,64 +601,83 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword
         <button onClick={onLogout} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>ออกจากระบบ</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isOwner ? '1fr 1fr' : '1fr', gap: 14, marginBottom: 18, maxWidth: isOwner ? 'none' : 520 }}>
-        <div style={{ ...card, padding: '16px 18px' }}>
-          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เปลี่ยนรหัสผ่านของฉัน ({currentName})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>รหัสผ่านเดิม</span>
-              <input type="password" value={cOld} onChange={e => { setCOld(e.target.value); setCError(''); }} style={pwInput} />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>รหัสผ่านใหม่</span>
-              <input type="password" value={cNew} onChange={e => { setCNew(e.target.value); setCError(''); }} style={pwInput} />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>ยืนยันรหัสผ่านใหม่</span>
-              <input type="password" value={cNew2} onChange={e => { setCNew2(e.target.value); setCError(''); }} style={pwInput} />
-            </label>
-            {!!cError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{cError}</div>}
-            {!!cOk && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{cOk}</div>}
-            <button onClick={change} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: 12, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>เปลี่ยนรหัสผ่าน</button>
-          </div>
+      {isOwner && (
+        <div style={{ marginBottom: 18 }}>
+          {!addOpen ? (
+            <button onClick={openAdd} style={{ background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '10px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>+ เพิ่มผู้ดูแลใหม่</button>
+          ) : (
+            <div style={{ ...card, padding: '16px 18px' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={labelStyle}>ชื่อผู้ดูแล</span>
+                  <input type="text" value={aName} onChange={e => { setAName(e.target.value); setAError(''); }} placeholder="เช่น หัวหน้าโอ๋" style={pinInput} autoFocus />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={labelStyle}>PIN (4 หลัก)</span>
+                  <input type="password" inputMode="numeric" maxLength={4} value={aPin} onChange={e => { setAPin(onlyDigits4(e.target.value)); setAError(''); }} style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={labelStyle}>ยืนยัน PIN</span>
+                  <input type="password" inputMode="numeric" maxLength={4} value={aPin2} onChange={e => { setAPin2(onlyDigits4(e.target.value)); setAError(''); }} style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
+                </label>
+              </div>
+              {!!aError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{aError}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={submitAdd} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '10px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>บันทึก</button>
+                <button onClick={() => setAddOpen(false)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+              </div>
+            </div>
+          )}
         </div>
-
-        {isOwner && <div style={{ ...card, padding: '16px 18px' }}>
-          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>ชื่อผู้ดูแล</span>
-              <input type="text" value={aName} onChange={e => { setAName(e.target.value); setAError(''); }} placeholder="เช่น หัวหน้าโอ๋" style={pwInput} />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>รหัสผ่าน</span>
-              <input type="password" value={aPw} onChange={e => { setAPw(e.target.value); setAError(''); }} style={pwInput} />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>ยืนยันรหัสผ่าน</span>
-              <input type="password" value={aPw2} onChange={e => { setAPw2(e.target.value); setAError(''); }} style={pwInput} />
-            </label>
-            {!!aError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{aError}</div>}
-            {!!aOk && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{aOk}</div>}
-            <button onClick={add} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: 12, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>+ เพิ่มผู้ดูแล</button>
-          </div>
-        </div>}
-      </div>
+      )}
 
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d' }}>รายชื่อผู้ดูแลทั้งหมด</div>
-        {admins.map(a => (
-          <div key={a.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45' }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>
-              {a.name}
-              {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}
-              {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
+        {admins.map(a => {
+          const canEdit = a.name === currentName || isOwner;
+          const canDelete = isOwner && a.name !== currentName && a.role !== 'owner';
+          const isEditingThis = editTarget === a.name;
+          return (
+            <div key={a.name} style={{ borderBottom: '1px solid #3a3e45' }}>
+              {!isEditingThis ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 18px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>
+                    {a.name}
+                    {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}
+                    {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {canEdit && <button onClick={() => openEdit(a)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>}
+                    {canDelete && <button onClick={() => { if (confirm('ลบผู้ดูแล "' + a.name + '"?')) onDelete(a.name); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '14px 18px', background: '#23262b' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span style={labelStyle}>ชื่อผู้ดูแล</span>
+                      <input type="text" value={eName} onChange={e => { setEName(e.target.value); setEError(''); }} style={pinInput} autoFocus />
+                    </label>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span style={labelStyle}>PIN ใหม่ (ไม่บังคับ)</span>
+                      <input type="password" inputMode="numeric" maxLength={4} value={ePin} onChange={e => { setEPin(onlyDigits4(e.target.value)); setEError(''); }} placeholder="เว้นว่างถ้าไม่เปลี่ยน" style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
+                    </label>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span style={labelStyle}>ยืนยัน PIN ใหม่</span>
+                      <input type="password" inputMode="numeric" maxLength={4} value={ePin2} onChange={e => { setEPin2(onlyDigits4(e.target.value)); setEError(''); }} style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
+                    </label>
+                  </div>
+                  {!!eError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{eError}</div>}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button onClick={submitEdit} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '10px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>บันทึก</button>
+                    <button onClick={() => setEditTarget(null)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+                  </div>
+                </div>
+              )}
             </div>
-            {isOwner && a.name !== currentName && a.role !== 'owner' && (
-              <button onClick={() => { if (confirm('ลบผู้ดูแล "' + a.name + '"?')) onDelete(a.name); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1227,12 +1289,13 @@ function App() {
   const deleteAdmin = async (name) => {
     await saveAdmins(admins.filter(a => a.name !== name));
   };
-  const changeAdminPassword = async (oldPw, newPw) => {
-    const oldHash = await sha256Hex(oldPw);
-    const me = admins.find(a => a.name === adminName);
-    if (!me || me.hash !== oldHash) return false;
-    const newHash = await sha256Hex(newPw);
-    return await saveAdmins(admins.map(a => a.name === adminName ? { ...a, hash: newHash } : a));
+  const editAdmin = async (oldName, newName, newHash) => {
+    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash } : a));
+    if (ok && oldName === adminName && newName !== oldName) {
+      sessionStorage.setItem('field_admin_name', newName);
+      setAdminName(newName);
+    }
+    return ok;
   };
 
   const doExportCsv = (filtered) => exportCsv(filtered, reports);
@@ -1287,7 +1350,7 @@ function App() {
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
           {tab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
-          {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onChangePassword={changeAdminPassword} onLogout={logoutAdmin} />}
+          {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} onLogout={logoutAdmin} />}
         </div>
       )}
     </div>

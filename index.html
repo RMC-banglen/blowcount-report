@@ -425,6 +425,16 @@ const PIN_RE = /^\d{4}$/;
 const onlyDigits4 = v => v.replace(/\D/g, '').slice(0, 4);
 const pinBoxStyle = { ...inputStyle, textAlign: 'center', fontSize: 26, letterSpacing: 10, fontWeight: 800 };
 
+function CompanyHeader() {
+  return (
+    <div style={{ textAlign: 'center', marginBottom: 40 }}>
+      <img src="./logo.png" alt="RMC" style={{ height: 90, marginBottom: 20 }} />
+      <div style={{ fontSize: 26, fontWeight: 800, color: '#e9e6e1' }}>บริษัท ร่วมมิตรคอนกรีต จำกัด</div>
+      <div style={{ fontSize: 15, color: '#9a958d', marginTop: 6 }}>ระบบรายงานการตอกเสาเข็ม</div>
+    </div>
+  );
+}
+
 function AdminLoginView({ admins, onSetup, onLogin }) {
   const firstUse = admins.length === 0;
   const [selected, setSelected] = useState(null);
@@ -448,6 +458,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
   if (firstUse) {
     return (
       <div style={{ maxWidth: 380, margin: '0 auto', padding: '60px 20px' }}>
+        <CompanyHeader />
         <div style={{ ...card, overflow: 'hidden' }}>
           <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>ตั้งค่าผู้ดูแลคนแรก</div>
@@ -476,14 +487,14 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
 
   if (!selected) {
     return (
-      <div style={{ maxWidth: 460, margin: '0 auto', padding: '60px 20px' }}>
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4, textAlign: 'center' }}>เข้าสู่หน้าแอดมิน</div>
-        <div style={{ fontSize: 13, color: '#9a958d', marginBottom: 20, textAlign: 'center' }}>เลือกชื่อของคุณ</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '60px 20px' }}>
+        <CompanyHeader />
+        <div style={{ fontSize: 14, color: '#9a958d', marginBottom: 22, textAlign: 'center' }}>เลือกผู้ใช้งานเพื่อเข้าสู่ระบบ</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 }}>
           {admins.map(a => (
-            <button key={a.name} onClick={() => { setSelected(a.name); setPin(''); setError(''); }} style={{ ...card, padding: '14px 18px', textAlign: 'left', fontSize: 15, fontWeight: 700, color: '#e9e6e1', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{a.name}{a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}</span>
-              <span style={{ color: '#9a958d' }}>→</span>
+            <button key={a.name} onClick={() => { setSelected(a.name); setPin(''); setError(''); }} style={{ ...card, padding: '22px 14px', textAlign: 'center', cursor: 'pointer' }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: '#e9e6e1' }}>{a.name}</div>
+              <div style={{ fontSize: 12, color: a.role === 'owner' ? '#e8762d' : '#9a958d', marginTop: 8, fontWeight: 700 }}>{a.role === 'owner' ? '★ แอดมินหลัก' : 'ผู้ดูแลระบบ'}</div>
             </button>
           ))}
         </div>
@@ -493,6 +504,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
 
   return (
     <div style={{ maxWidth: 380, margin: '0 auto', padding: '60px 20px' }}>
+      <CompanyHeader />
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
           <div style={{ fontSize: 18, fontWeight: 800 }}>{selected}</div>
@@ -1308,8 +1320,10 @@ function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#23262b', color: '#e9e6e1' }}>
-      <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={tab}
-        onHome={() => setView('admin')} onAdminTab={setTab} onLogout={logoutAdmin} />
+      {!(view === 'admin' && !adminAuthed) && (
+        <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={tab}
+          onHome={() => setView('admin')} onAdminTab={setTab} onLogout={logoutAdmin} />
+      )}
 
       {view === 'form' && (
         <WorkerFormView

@@ -93,13 +93,6 @@ function daysSince(iso) {
 }
 function withinWorkerEditWindow(iso) { return daysSince(iso) <= WORKER_EDIT_WINDOW_DAYS; }
 
-function haversineKm(a, b) {
-  const R = 6371, rad = x => x * Math.PI / 180;
-  const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
 // cumulative count for site+pile, over reports up to (and optionally excluding) a report id
 function cumFor(reports, site, pile, uptoDate, excludeId) {
   let sum = 0;
@@ -174,7 +167,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
   );
 }
 
-function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, onSetHome }) {
+function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit }) {
   const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ pile: '', count: '' }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceKm: '', workType: 'pile', note: '' };
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
@@ -184,8 +177,6 @@ function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites,
   } : blank);
   const [error, setError] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [geoMsg, setGeoMsg] = useState('');
   const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7));
 
   useEffect(() => {
@@ -219,26 +210,6 @@ function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites,
     setF(blank);
     window.scrollTo(0, 0);
     setTimeout(() => setSavedFlash(false), 3000);
-  };
-
-  const getPosition = (cb) => {
-    if (!navigator.geolocation) return setGeoMsg('เบราว์เซอร์นี้ไม่รองรับการหาตำแหน่ง');
-    setLocating(true); setGeoMsg('');
-    navigator.geolocation.getCurrentPosition(
-      pos => { setLocating(false); cb({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
-      err => { setLocating(false); setGeoMsg('หาตำแหน่งไม่สำเร็จ: ' + (err.code === 1 ? 'กรุณาอนุญาตให้เข้าถึงตำแหน่ง' : 'ลองใหม่อีกครั้ง')); },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-    );
-  };
-  const home = homes[worker];
-  const setHomeHere = () => getPosition(loc => { onSetHome(worker, loc); setGeoMsg('✓ บันทึกตำแหน่งบ้านแล้ว'); });
-  const locateAndFill = () => {
-    if (!home) return setGeoMsg('ยังไม่ได้ตั้งตำแหน่งบ้าน — กด "ตั้งตำแหน่งบ้าน" ขณะอยู่ที่บ้านก่อน');
-    getPosition(loc => {
-      const km = Math.round(haversineKm(home, loc));
-      setF(s => ({ ...s, distanceKm: String(km) }));
-      setGeoMsg('✓ ระยะทางจากบ้านถึงจุดนี้ประมาณ ' + km + ' กม. (แนวเส้นตรง แก้ตัวเลขได้)');
-    });
   };
 
   const fieldPreviewVal = fieldRate(f.distanceKm) * fieldFactor(f.workType);
@@ -334,17 +305,7 @@ function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites,
 
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ระยะทางไปหน้างาน (กม.)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 10, alignItems: 'stretch' }}>
-              <input type="number" min="0" value={f.distanceKm} onChange={e => setF(s => ({ ...s, distanceKm: e.target.value }))} placeholder="กม." style={{ ...inputStyle, fontWeight: 700, textAlign: 'center' }} />
-              <button onClick={locateAndFill} disabled={locating} style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 6, padding: '10px 14px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-                {locating ? '⏳ กำลังหาตำแหน่ง...' : '📍 คำนวณจากตำแหน่งปัจจุบัน'}
-              </button>
-            </div>
-            {!!geoMsg && <div style={{ fontSize: 13, color: '#f0b98c', marginTop: 8 }}>{geoMsg}</div>}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, color: '#9a958d' }}>{home ? '✓ ตั้งตำแหน่งบ้านแล้ว' : 'ยังไม่ได้ตั้งตำแหน่งบ้าน'}</span>
-              <button onClick={setHomeHere} style={{ background: 'none', border: 'none', color: '#e8762d', fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{home ? 'ตั้งใหม่' : 'ตั้งตำแหน่งบ้าน (กดขณะอยู่บ้าน)'}</button>
-            </div>
+            <input type="number" min="0" value={f.distanceKm} onChange={e => setF(s => ({ ...s, distanceKm: e.target.value }))} placeholder="กม." style={{ ...inputStyle, fontWeight: 700, textAlign: 'center' }} />
             {fieldPreviewVal > 0 && <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท</div>}
           </div>
 
@@ -1129,7 +1090,6 @@ function App() {
   const [loadError, setLoadError] = useState('');
   const [workers, setWorkers] = useState([]);
   const [reports, setReports] = useState([]);
-  const [homes, setHomes] = useState({});
   const [rates, setRates] = useState({ car: 250, moto: 100 });
   const [admins, setAdmins] = useState([]);
 
@@ -1143,15 +1103,13 @@ function App() {
 
   const load = useCallback(async () => {
     try {
-      const [wRes, rRes, hRes, sRes] = await Promise.all([
+      const [wRes, rRes, sRes] = await Promise.all([
         DB.from('field_workers').select('*').order('created_at', { ascending: true }),
         DB.from('field_reports').select('*').order('date', { ascending: false }),
-        DB.from('field_homes').select('*'),
         DB.from('field_settings').select('*'),
       ]);
       if (wRes.error) throw wRes.error;
       if (rRes.error) throw rRes.error;
-      if (hRes.error) throw hRes.error;
       if (sRes.error) throw sRes.error;
 
       setWorkers(wRes.data || []);
@@ -1160,8 +1118,6 @@ function App() {
         timeIn: r.time_in, timeOut: r.time_out, vehicle: r.vehicle, distanceKm: Number(r.distance_km) || 0,
         workType: r.work_type, note: r.note || ''
       })));
-      const hm = {}; (hRes.data || []).forEach(h => { hm[h.worker_nick] = { lat: h.lat, lng: h.lng }; });
-      setHomes(hm);
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100 });
       let adminUsers = [];
@@ -1220,17 +1176,11 @@ function App() {
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     await load();
   };
-  const setHome = async (nick, loc) => {
-    const { error } = await DB.from('field_homes').upsert({ worker_nick: nick, lat: loc.lat, lng: loc.lng, updated_at: new Date().toISOString() });
-    if (error) return alert('บันทึกตำแหน่งบ้านไม่สำเร็จ: ' + error.message);
-    await load();
-  };
   const saveWorker = async ({ fullName, nick, editingNick }) => {
     if (editingNick && editingNick !== nick) {
       const { error: insErr } = await DB.from('field_workers').insert({ nick, full_name: fullName });
       if (insErr) return alert('บันทึกไม่สำเร็จ: ' + insErr.message);
       await DB.from('field_reports').update({ worker_nick: nick }).eq('worker_nick', editingNick);
-      await DB.from('field_homes').update({ worker_nick: nick }).eq('worker_nick', editingNick);
       await DB.from('field_workers').delete().eq('nick', editingNick);
     } else {
       const { error } = await DB.from('field_workers').upsert({ nick, full_name: fullName });
@@ -1328,9 +1278,9 @@ function App() {
       {view === 'form' && (
         <WorkerFormView
           worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : worker}
-          reports={reports} homes={homes} rates={rates} knownSites={knownSites} knownPiles={knownPiles}
+          reports={reports} rates={rates} knownSites={knownSites} knownPiles={knownPiles}
           editingReport={editingReport} onCancelEdit={() => setEditingReport(null)}
-          onSave={saveReport} onDelete={deleteReport} onEdit={setEditingReport} onSetHome={setHome}
+          onSave={saveReport} onDelete={deleteReport} onEdit={setEditingReport}
         />
       )}
 

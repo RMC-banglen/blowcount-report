@@ -174,41 +174,14 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab }) {
   );
 }
 
-function HomeView({ workers, onOpen, onGoAdmin }) {
-  const [copied, setCopied] = useState(null);
-  const copyLink = (nick) => {
-    const url = location.origin + location.pathname + '?user=' + nick;
-    navigator.clipboard && navigator.clipboard.writeText(url);
-    setCopied(nick);
-    setTimeout(() => setCopied(null), 1500);
-  };
+function HomeView({ onGoAdmin }) {
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '36px 20px 60px' }}>
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700, letterSpacing: 2, marginBottom: 6 }}>ลิงก์ประจำตัวพนักงาน</div>
-        <div style={{ fontSize: 26, fontWeight: 800 }}>เลือกชื่อของคุณเพื่อกรอกรายงาน</div>
-        <div style={{ fontSize: 14, color: '#9a958d', marginTop: 6 }}>แต่ละคนมีลิงก์เฉพาะตัว — คัดลอกลิงก์ส่งให้พนักงานเปิดกรอกได้เลย</div>
+    <div style={{ maxWidth: 480, margin: '0 auto', padding: '80px 20px', textAlign: 'center' }}>
+      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>ระบบรายงานการตอกเสาเข็ม</div>
+      <div style={{ fontSize: 14, color: '#9a958d', marginBottom: 28, lineHeight: 1.7 }}>
+        พนักงานกรุณาใช้ลิงก์ประจำตัวที่ได้รับจากบริษัทเพื่อกรอกรายงาน — หากยังไม่มีลิงก์ ติดต่อส่วนกลาง
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-        {workers.map(w => (
-          <div key={w.nick} style={{ ...card, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flex: 1, minWidth: 0 }} onClick={() => onOpen(w.nick)}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.full_name}</div>
-                <div style={{ fontSize: 12, color: '#9a958d' }}>({w.nick})</div>
-              </div>
-            </div>
-            <button onClick={() => copyLink(w.nick)} title="คัดลอกลิงก์" style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 4, padding: '6px 10px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>
-              {copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}
-            </button>
-          </div>
-        ))}
-        {workers.length === 0 && <div style={{ color: '#9a958d', fontSize: 14 }}>ยังไม่มีรายชื่อพนักงาน — เพิ่มได้ที่หน้าแอดมิน</div>}
-      </div>
-      <div style={{ marginTop: 36, borderTop: '1px solid #3a3e45', paddingTop: 24, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 14, color: '#9a958d' }}>สำหรับส่วนกลาง:</div>
-        <button onClick={onGoAdmin} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '12px 22px', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>เข้าหน้าแอดมิน / รายงานรวม →</button>
-      </div>
+      <button onClick={onGoAdmin} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '12px 22px', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>เข้าหน้าแอดมิน / รายงานรวม →</button>
     </div>
   );
 }
@@ -802,6 +775,14 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [nick, setNick] = useState('');
   const [editingNick, setEditingNick] = useState(null);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(null);
+
+  const copyLink = (nick) => {
+    const url = location.origin + location.pathname + '?user=' + nick;
+    navigator.clipboard && navigator.clipboard.writeText(url);
+    setCopied(nick);
+    setTimeout(() => setCopied(null), 1500);
+  };
 
   const save = () => {
     const full = fullName.trim(), n = nick.trim();
@@ -843,6 +824,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
               <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
               <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
                 const n = reports.filter(r => r.worker === w.nick).length;
@@ -1328,7 +1310,7 @@ function App() {
       <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={tab}
         onHome={() => setView('home')} onAdminTab={setTab} />
 
-      {view === 'home' && <HomeView workers={workers} onOpen={nick => { setWorker(nick); setEditingReport(null); setView('form'); }} onGoAdmin={() => setView('admin')} />}
+      {view === 'home' && <HomeView onGoAdmin={() => setView('admin')} />}
 
       {view === 'form' && (
         <WorkerFormView

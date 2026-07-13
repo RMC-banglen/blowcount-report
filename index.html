@@ -177,7 +177,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab }) {
 function HomeView({ workers, onOpen, onGoAdmin }) {
   const [copied, setCopied] = useState(null);
   const copyLink = (nick) => {
-    const url = location.origin + location.pathname + '?user=' + encodeURIComponent(nick);
+    const url = location.origin + location.pathname + '?user=' + nick;
     navigator.clipboard && navigator.clipboard.writeText(url);
     setCopied(nick);
     setTimeout(() => setCopied(null), 1500);

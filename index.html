@@ -466,6 +466,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
 }
 
 function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword, onLogout }) {
+  const isOwner = admins.some(a => a.name === currentName && a.role === 'owner');
   const [aName, setAName] = useState('');
   const [aPw, setAPw] = useState('');
   const [aPw2, setAPw2] = useState('');
@@ -504,12 +505,13 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800 }}>จัดการผู้ดูแลระบบ</div>
-          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b> · ผู้ดูแลทั้งหมด {admins.length} คน</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b>{isOwner && <span style={{ color: '#6dbf5b', fontWeight: 700 }}> (แอดมินหลัก)</span>} · ผู้ดูแลทั้งหมด {admins.length} คน</div>
+          {!isOwner && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 4 }}>เฉพาะแอดมินหลักเท่านั้นที่เพิ่ม/ลบผู้ดูแลได้</div>}
         </div>
         <button onClick={onLogout} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>ออกจากระบบ</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isOwner ? '1fr 1fr' : '1fr', gap: 14, marginBottom: 18, maxWidth: isOwner ? 'none' : 520 }}>
         <div style={{ ...card, padding: '16px 18px' }}>
           <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เปลี่ยนรหัสผ่านของฉัน ({currentName})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -531,7 +533,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword
           </div>
         </div>
 
-        <div style={{ ...card, padding: '16px 18px' }}>
+        {isOwner && <div style={{ ...card, padding: '16px 18px' }}>
           <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -550,7 +552,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword
             {!!aOk && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{aOk}</div>}
             <button onClick={add} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: 12, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>+ เพิ่มผู้ดูแล</button>
           </div>
-        </div>
+        </div>}
       </div>
 
       <div style={{ ...card, overflow: 'hidden' }}>
@@ -559,9 +561,10 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword
           <div key={a.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45' }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>
               {a.name}
+              {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}
               {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
             </div>
-            {a.name !== currentName && (
+            {isOwner && a.name !== currentName && a.role !== 'owner' && (
               <button onClick={() => { if (confirm('ลบผู้ดูแล "' + a.name + '"?')) onDelete(a.name); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
             )}
           </div>
@@ -1063,9 +1066,14 @@ function App() {
       if (!Array.isArray(adminUsers)) adminUsers = [];
       // migrate from the old single-password scheme
       if (!adminUsers.length && settings.admin_password_hash) {
-        adminUsers = [{ name: 'แอดมิน', hash: settings.admin_password_hash }];
+        adminUsers = [{ name: 'แอดมิน', hash: settings.admin_password_hash, role: 'owner' }];
         await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(adminUsers) });
         await DB.from('field_settings').delete().eq('key', 'admin_password_hash');
+      }
+      // a list from before roles existed: promote the first admin to owner
+      if (adminUsers.length && !adminUsers.some(a => a.role === 'owner')) {
+        adminUsers = adminUsers.map((a, i) => i === 0 ? { ...a, role: 'owner' } : { ...a, role: 'admin' });
+        await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(adminUsers) });
       }
       setAdmins(adminUsers);
       // sessions from the old single-password scheme have no admin name — ask to log in again
@@ -1150,7 +1158,7 @@ function App() {
   };
   const setupAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);
-    if (await saveAdmins([{ name, hash }])) beginSession(name);
+    if (await saveAdmins([{ name, hash, role: 'owner' }])) beginSession(name);
   };
   const loginAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);
@@ -1167,7 +1175,7 @@ function App() {
   };
   const addAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);
-    await saveAdmins([...admins, { name, hash }]);
+    await saveAdmins([...admins, { name, hash, role: 'admin' }]);
   };
   const deleteAdmin = async (name) => {
     await saveAdmins(admins.filter(a => a.name !== name));

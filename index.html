@@ -777,10 +777,16 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(null);
 
+  const linkFor = (nick) => location.origin + location.pathname + '?user=' + nick;
   const copyLink = (nick) => {
-    const url = location.origin + location.pathname + '?user=' + nick;
-    navigator.clipboard && navigator.clipboard.writeText(url);
+    navigator.clipboard && navigator.clipboard.writeText(linkFor(nick));
     setCopied(nick);
+    setTimeout(() => setCopied(null), 1500);
+  };
+  const copyAllLinks = () => {
+    const text = workers.map(w => w.full_name + ' (' + w.nick + '): ' + linkFor(w.nick)).join('\n');
+    navigator.clipboard && navigator.clipboard.writeText(text);
+    setCopied('__all__');
     setTimeout(() => setCopied(null), 1500);
   };
 
@@ -796,8 +802,17 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
 
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>จัดการรายชื่อพนักงาน</div>
-      <div style={{ fontSize: 13, color: '#9a958d', marginBottom: 20 }}>ทั้งหมด {workers.length} คน · ชื่อเล่นใช้เป็นลิงก์ประจำตัว (?user=ชื่อเล่น)</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>จัดการรายชื่อพนักงาน</div>
+          <div style={{ fontSize: 13, color: '#9a958d' }}>ทั้งหมด {workers.length} คน · ชื่อเล่นใช้เป็นลิงก์ประจำตัว (?user=ชื่อเล่น)</div>
+        </div>
+        {workers.length > 0 && (
+          <button onClick={copyAllLinks} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            {copied === '__all__' ? 'คัดลอกแล้ว ✓' : '↓ คัดลอกลิงก์ทั้งหมด'}
+          </button>
+        )}
+      </div>
 
       <div style={{ ...card, padding: '16px 18px', marginBottom: 18 }}>
         <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>{editingNick ? 'แก้ไขพนักงาน: ' + editingNick : 'เพิ่มพนักงานใหม่'}</div>

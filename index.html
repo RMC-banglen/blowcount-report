@@ -84,6 +84,15 @@ function thDate(iso) {
   return d + ' ' + MONTHS_TH_SHORT[m - 1] + ' ' + (y + 543);
 }
 
+const WORKER_EDIT_WINDOW_DAYS = 7;
+function daysSince(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const then = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((today - then) / 86400000);
+}
+function withinWorkerEditWindow(iso) { return daysSince(iso) <= WORKER_EDIT_WINDOW_DAYS; }
+
 function haversineKm(a, b) {
   const R = 6371, rad = x => x * Math.PI / 180;
   const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
@@ -204,7 +213,7 @@ function HomeView({ workers, onOpen, onGoAdmin }) {
   );
 }
 
-function WorkerFormView({ worker, workerFull, reports, homes, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, onSetHome }) {
+function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, onSetHome }) {
   const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ pile: '', count: '' }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceKm: '', workType: 'pile', note: '' };
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
@@ -216,6 +225,7 @@ function WorkerFormView({ worker, workerFull, reports, homes, knownSites, knownP
   const [savedFlash, setSavedFlash] = useState(false);
   const [locating, setLocating] = useState(false);
   const [geoMsg, setGeoMsg] = useState('');
+  const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7));
 
   useEffect(() => {
     if (editingReport) {
@@ -271,7 +281,16 @@ function WorkerFormView({ worker, workerFull, reports, homes, knownSites, knownP
   };
 
   const fieldPreviewVal = fieldRate(f.distanceKm) * fieldFactor(f.workType);
-  const mine = reports.filter(r => r.worker === worker).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id).slice(0, 5);
+  const myAll = reports.filter(r => r.worker === worker).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const myMonths = [...new Set(myAll.map(r => r.date.slice(0, 7)))].sort().reverse();
+  const mine = myAll.filter(r => r.date.slice(0, 7) === historyMonth);
+  const myByDate = {};
+  for (const r of mine) if (!myByDate[r.date]) myByDate[r.date] = r;
+  const myDays = Object.keys(myByDate).length;
+  const myTotalPiles = mine.reduce((sum, r) => sum + r.items.reduce((s, it) => s + (Number(it.count) || 0), 0), 0);
+  const myMoney = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates) + fieldMoney(r), 0);
+  const [hy, hm] = historyMonth.split('-').map(Number);
+  const historyMonthTh = MONTHS_TH[hm - 1] + ' ' + (hy + 543);
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 16px 80px' }}>
@@ -388,24 +407,52 @@ function WorkerFormView({ worker, workerFull, reports, homes, knownSites, knownP
         </div>
       </div>
 
-      {mine.length > 0 && (
+      {myAll.length > 0 && (
         <div style={{ marginTop: 28 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10, color: '#c8c3bb' }}>รายงานล่าสุดของฉัน</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#c8c3bb' }}>ประวัติรายงานของฉัน</div>
+            <select value={historyMonth} onChange={e => setHistoryMonth(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '8px 12px', fontSize: 13 }}>
+              {!myMonths.includes(historyMonth) && <option value={historyMonth}>{historyMonthTh}</option>}
+              {myMonths.map(m => {
+                const [yy, mm] = m.split('-').map(Number);
+                return <option key={m} value={m}>{MONTHS_TH[mm - 1]} {yy + 543}</option>;
+              })}
+            </select>
+          </div>
+
+          <div style={{ ...card, padding: '12px 16px', marginBottom: 12, display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13, color: '#c8c3bb' }}>
+            <span>เดือน {historyMonthTh}</span>
+            <span>ทำงาน <b style={{ color: '#e9e6e1' }}>{myDays}</b> วัน</span>
+            <span>ตอกรวม <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(myTotalPiles)}</b> ต้น</span>
+            <span>ค่ารถเดือนนี้ <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(myMoney)}</b> บาท</span>
+          </div>
+
+          {mine.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '30px 20px', textAlign: 'center', color: '#9a958d', fontSize: 14 }}>ไม่มีรายงานในเดือนนี้</div>}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {mine.map(r => (
-              <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(r.date)} · {r.site}</div>
-                  <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
-                  <div style={{ fontSize: 12, color: '#9a958d', marginTop: 3 }}>{r.timeIn}–{r.timeOut} น. · {vehicleTh(r.vehicle)}</div>
-                  {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {r.note}</div>}
+            {mine.map(r => {
+              const editable = withinWorkerEditWindow(r.date);
+              return (
+                <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(r.date)} · {r.site}</div>
+                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
+                    <div style={{ fontSize: 12, color: '#9a958d', marginTop: 3 }}>{r.timeIn}–{r.timeOut} น. · {vehicleTh(r.vehicle)}</div>
+                    {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {r.note}</div>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                    {editable ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => onEdit(r)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+                        <button onClick={() => { if (confirm('ลบรายงานนี้?')) onDelete(r.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }} title={'แก้ไขได้เฉพาะภายใน ' + WORKER_EDIT_WINDOW_DAYS + ' วันหลังวันที่รายงาน'}>🔒 เกินกำหนดแก้ไข</div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button onClick={() => onEdit(r)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
-                  <button onClick={() => { if (confirm('ลบรายงานนี้?')) onDelete(r.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1223,7 +1270,7 @@ function App() {
       {view === 'form' && (
         <WorkerFormView
           worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : worker}
-          reports={reports} homes={homes} knownSites={knownSites} knownPiles={knownPiles}
+          reports={reports} homes={homes} rates={rates} knownSites={knownSites} knownPiles={knownPiles}
           editingReport={editingReport} onCancelEdit={() => setEditingReport(null)}
           onSave={saveReport} onDelete={deleteReport} onEdit={setEditingReport} onSetHome={setHome}
         />

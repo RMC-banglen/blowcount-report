@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ระบบรายงานการตอกเสาเข็ม</title>
+<link rel="icon" type="image/png" href="./logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -136,7 +137,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab }) {
   return (
     <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, position: 'sticky', top: 0, zIndex: 50 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={onHome}>
-        <div style={{ width: 34, height: 34, background: '#e8762d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, color: '#1b1d21', borderRadius: 4 }}>ต</div>
+        <img src="./logo.png" alt="RMC" style={{ height: 38, background: '#fff', borderRadius: 8, padding: '3px 7px' }} />
         <div>
           <div style={{ fontWeight: 700, fontSize: 16, lineHeight: 1.1 }}>ระบบรายงานการตอกเสาเข็ม</div>
           <div style={{ fontSize: 11, color: '#9a958d', lineHeight: 1.2 }}>Blowcount Daily Report</div>

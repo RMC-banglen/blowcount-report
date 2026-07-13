@@ -131,6 +131,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab }) {
   const adminTabs = [
     { key: 'reports', label: 'รายงานรวม' }, { key: 'piles', label: 'ยอดสะสมรายเสา' },
     { key: 'monthly', label: 'สรุปรายเดือน' }, { key: 'car', label: 'ค่ารถออกสนาม' }, { key: 'workers', label: 'พนักงาน' },
+    { key: 'admins', label: 'ผู้ดูแล' },
   ];
   return (
     <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, position: 'sticky', top: 0, zIndex: 50 }}>
@@ -411,45 +412,159 @@ function WorkerFormView({ worker, workerFull, reports, homes, knownSites, knownP
   );
 }
 
-function AdminLoginView({ hasPasswordHash, onSetPassword, onLogin }) {
+function AdminLoginView({ admins, onSetup, onLogin }) {
+  const firstUse = admins.length === 0;
+  const [name, setName] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [error, setError] = useState('');
 
-  const submitSet = async () => {
+  const submitSetup = async () => {
+    if (!name.trim()) return setError('กรุณากรอกชื่อผู้ดูแล');
     if (pw.length < 4) return setError('รหัสผ่านอย่างน้อย 4 ตัวอักษร');
     if (pw !== pw2) return setError('รหัสผ่านไม่ตรงกัน');
-    await onSetPassword(pw);
+    await onSetup(name.trim(), pw);
   };
   const submitLogin = async () => {
-    const ok = await onLogin(pw);
-    if (!ok) setError('รหัสผ่านไม่ถูกต้อง');
+    const ok = await onLogin(name.trim(), pw);
+    if (!ok) setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   };
-  const onKey = (e, fn) => { if (e.key === 'Enter') fn(); };
+  const submit = firstUse ? submitSetup : submitLogin;
+  const onKey = (e) => { if (e.key === 'Enter') submit(); };
 
   return (
     <div style={{ maxWidth: 380, margin: '0 auto', padding: '60px 20px' }}>
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>{hasPasswordHash ? 'เข้าสู่หน้าแอดมิน' : 'ตั้งรหัสผ่านแอดมิน'}</div>
-          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>{hasPasswordHash ? 'สำหรับส่วนกลางเท่านั้น' : 'ยังไม่เคยตั้งรหัสผ่าน — ตั้งครั้งแรกที่นี่'}</div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>{firstUse ? 'ตั้งค่าผู้ดูแลคนแรก' : 'เข้าสู่หน้าแอดมิน'}</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>{firstUse ? 'ยังไม่มีผู้ดูแล — สร้างบัญชีแรกที่นี่' : 'สำหรับส่วนกลางเท่านั้น'}</div>
         </div>
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={labelStyle}>รหัสผ่าน</span>
-            <input type="password" value={pw} onChange={e => { setPw(e.target.value); setError(''); }} onKeyDown={e => onKey(e, hasPasswordHash ? submitLogin : submitSet)} placeholder="กรอกรหัสผ่าน" style={inputStyle} autoFocus />
+            <span style={labelStyle}>ชื่อผู้ดูแล</span>
+            <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={onKey} placeholder="เช่น แอดมิน" style={inputStyle} autoFocus />
           </label>
-          {!hasPasswordHash && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={labelStyle}>รหัสผ่าน</span>
+            <input type="password" value={pw} onChange={e => { setPw(e.target.value); setError(''); }} onKeyDown={onKey} placeholder="กรอกรหัสผ่าน" style={inputStyle} />
+          </label>
+          {firstUse && (
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={labelStyle}>ยืนยันรหัสผ่าน</span>
-              <input type="password" value={pw2} onChange={e => { setPw2(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitSet)} placeholder="กรอกอีกครั้ง" style={inputStyle} />
+              <input type="password" value={pw2} onChange={e => { setPw2(e.target.value); setError(''); }} onKeyDown={onKey} placeholder="กรอกอีกครั้ง" style={inputStyle} />
             </label>
           )}
           {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
-          <button onClick={hasPasswordHash ? submitLogin : submitSet} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>
-            {hasPasswordHash ? 'เข้าสู่ระบบ' : 'ตั้งรหัสผ่านและเข้าสู่ระบบ'}
+          <button onClick={submit} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>
+            {firstUse ? 'สร้างผู้ดูแลและเข้าสู่ระบบ' : 'เข้าสู่ระบบ'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onChangePassword, onLogout }) {
+  const [aName, setAName] = useState('');
+  const [aPw, setAPw] = useState('');
+  const [aPw2, setAPw2] = useState('');
+  const [aError, setAError] = useState('');
+  const [aOk, setAOk] = useState('');
+  const [cOld, setCOld] = useState('');
+  const [cNew, setCNew] = useState('');
+  const [cNew2, setCNew2] = useState('');
+  const [cError, setCError] = useState('');
+  const [cOk, setCOk] = useState('');
+
+  const add = async () => {
+    setAOk('');
+    const n = aName.trim();
+    if (!n) return setAError('กรุณากรอกชื่อผู้ดูแล');
+    if (admins.some(a => a.name === n)) return setAError('ชื่อ "' + n + '" มีอยู่แล้ว');
+    if (aPw.length < 4) return setAError('รหัสผ่านอย่างน้อย 4 ตัวอักษร');
+    if (aPw !== aPw2) return setAError('รหัสผ่านไม่ตรงกัน');
+    await onAdd(n, aPw);
+    setAName(''); setAPw(''); setAPw2(''); setAError('');
+    setAOk('✓ เพิ่มผู้ดูแล "' + n + '" แล้ว');
+  };
+  const change = async () => {
+    setCOk('');
+    if (cNew.length < 4) return setCError('รหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร');
+    if (cNew !== cNew2) return setCError('รหัสผ่านใหม่ไม่ตรงกัน');
+    const ok = await onChangePassword(cOld, cNew);
+    if (!ok) return setCError('รหัสผ่านเดิมไม่ถูกต้อง');
+    setCOld(''); setCNew(''); setCNew2(''); setCError('');
+    setCOk('✓ เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
+  };
+  const pwInput = { ...inputStyle, padding: '10px 12px' };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>จัดการผู้ดูแลระบบ</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b> · ผู้ดูแลทั้งหมด {admins.length} คน</div>
+        </div>
+        <button onClick={onLogout} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>ออกจากระบบ</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
+        <div style={{ ...card, padding: '16px 18px' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เปลี่ยนรหัสผ่านของฉัน ({currentName})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>รหัสผ่านเดิม</span>
+              <input type="password" value={cOld} onChange={e => { setCOld(e.target.value); setCError(''); }} style={pwInput} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>รหัสผ่านใหม่</span>
+              <input type="password" value={cNew} onChange={e => { setCNew(e.target.value); setCError(''); }} style={pwInput} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ยืนยันรหัสผ่านใหม่</span>
+              <input type="password" value={cNew2} onChange={e => { setCNew2(e.target.value); setCError(''); }} style={pwInput} />
+            </label>
+            {!!cError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{cError}</div>}
+            {!!cOk && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{cOk}</div>}
+            <button onClick={change} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: 12, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>เปลี่ยนรหัสผ่าน</button>
+          </div>
+        </div>
+
+        <div style={{ ...card, padding: '16px 18px' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ชื่อผู้ดูแล</span>
+              <input type="text" value={aName} onChange={e => { setAName(e.target.value); setAError(''); }} placeholder="เช่น หัวหน้าโอ๋" style={pwInput} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>รหัสผ่าน</span>
+              <input type="password" value={aPw} onChange={e => { setAPw(e.target.value); setAError(''); }} style={pwInput} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ยืนยันรหัสผ่าน</span>
+              <input type="password" value={aPw2} onChange={e => { setAPw2(e.target.value); setAError(''); }} style={pwInput} />
+            </label>
+            {!!aError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{aError}</div>}
+            {!!aOk && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{aOk}</div>}
+            <button onClick={add} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: 12, fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>+ เพิ่มผู้ดูแล</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ ...card, overflow: 'hidden' }}>
+        <div style={{ background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d' }}>รายชื่อผู้ดูแลทั้งหมด</div>
+        {admins.map(a => (
+          <div key={a.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45' }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>
+              {a.name}
+              {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
+            </div>
+            {a.name !== currentName && (
+              <button onClick={() => { if (confirm('ลบผู้ดูแล "' + a.name + '"?')) onDelete(a.name); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -909,12 +1024,13 @@ function App() {
   const [reports, setReports] = useState([]);
   const [homes, setHomes] = useState({});
   const [rates, setRates] = useState({ car: 250, moto: 100 });
-  const [adminPasswordHash, setAdminPasswordHash] = useState(undefined); // undefined = not loaded yet
+  const [admins, setAdmins] = useState([]);
 
   const [view, setView] = useState('home');
   const [worker, setWorker] = useState(null);
   const [tab, setTab] = useState('reports');
   const [adminAuthed, setAdminAuthed] = useState(sessionStorage.getItem('field_admin_authed') === '1');
+  const [adminName, setAdminName] = useState(sessionStorage.getItem('field_admin_name') || '');
   const [editingReport, setEditingReport] = useState(null);
   const [printPayload, setPrintPayload] = useState(null); // { kind, ...data }
 
@@ -941,7 +1057,21 @@ function App() {
       setHomes(hm);
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100 });
-      setAdminPasswordHash(settings.admin_password_hash || null);
+      let adminUsers = [];
+      try { adminUsers = JSON.parse(settings.admin_users || '[]'); } catch (e) { adminUsers = []; }
+      if (!Array.isArray(adminUsers)) adminUsers = [];
+      // migrate from the old single-password scheme
+      if (!adminUsers.length && settings.admin_password_hash) {
+        adminUsers = [{ name: 'แอดมิน', hash: settings.admin_password_hash }];
+        await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(adminUsers) });
+        await DB.from('field_settings').delete().eq('key', 'admin_password_hash');
+      }
+      setAdmins(adminUsers);
+      // sessions from the old single-password scheme have no admin name — ask to log in again
+      if (sessionStorage.getItem('field_admin_authed') === '1' && !sessionStorage.getItem('field_admin_name')) {
+        sessionStorage.removeItem('field_admin_authed');
+        setAdminAuthed(false);
+      }
 
       const params = new URLSearchParams(location.search);
       const u = params.get('user');
@@ -1005,22 +1135,48 @@ function App() {
     setRates(next);
     await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }]);
   };
-  const setAdminPassword = async (pw) => {
-    const hash = await sha256Hex(pw);
-    const { error } = await DB.from('field_settings').upsert({ key: 'admin_password_hash', value: hash });
-    if (error) return alert('ตั้งรหัสผ่านไม่สำเร็จ: ' + error.message);
-    setAdminPasswordHash(hash);
-    sessionStorage.setItem('field_admin_authed', '1');
-    setAdminAuthed(true);
+  const saveAdmins = async (list) => {
+    const { error } = await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(list) });
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return false; }
+    setAdmins(list);
+    return true;
   };
-  const loginAdmin = async (pw) => {
+  const beginSession = (name) => {
+    sessionStorage.setItem('field_admin_authed', '1');
+    sessionStorage.setItem('field_admin_name', name);
+    setAdminAuthed(true);
+    setAdminName(name);
+  };
+  const setupAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);
-    if (hash === adminPasswordHash) {
-      sessionStorage.setItem('field_admin_authed', '1');
-      setAdminAuthed(true);
-      return true;
-    }
-    return false;
+    if (await saveAdmins([{ name, hash }])) beginSession(name);
+  };
+  const loginAdmin = async (name, pw) => {
+    const hash = await sha256Hex(pw);
+    const rec = admins.find(a => a.name === name && a.hash === hash);
+    if (!rec) return false;
+    beginSession(name);
+    return true;
+  };
+  const logoutAdmin = () => {
+    sessionStorage.removeItem('field_admin_authed');
+    sessionStorage.removeItem('field_admin_name');
+    setAdminAuthed(false);
+    setAdminName('');
+  };
+  const addAdmin = async (name, pw) => {
+    const hash = await sha256Hex(pw);
+    await saveAdmins([...admins, { name, hash }]);
+  };
+  const deleteAdmin = async (name) => {
+    await saveAdmins(admins.filter(a => a.name !== name));
+  };
+  const changeAdminPassword = async (oldPw, newPw) => {
+    const oldHash = await sha256Hex(oldPw);
+    const me = admins.find(a => a.name === adminName);
+    if (!me || me.hash !== oldHash) return false;
+    const newHash = await sha256Hex(newPw);
+    return await saveAdmins(admins.map(a => a.name === adminName ? { ...a, hash: newHash } : a));
   };
 
   const doExportCsv = (filtered) => exportCsv(filtered, reports);
@@ -1065,7 +1221,7 @@ function App() {
       )}
 
       {view === 'admin' && !adminAuthed && (
-        <AdminLoginView hasPasswordHash={!!adminPasswordHash} onSetPassword={setAdminPassword} onLogin={loginAdmin} />
+        <AdminLoginView admins={admins} onSetup={setupAdmin} onLogin={loginAdmin} />
       )}
 
       {view === 'admin' && adminAuthed && (
@@ -1075,6 +1231,7 @@ function App() {
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
           {tab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
+          {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onChangePassword={changeAdminPassword} onLogout={logoutAdmin} />}
         </div>
       )}
     </div>

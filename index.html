@@ -1261,6 +1261,7 @@ function App() {
     sessionStorage.setItem('field_admin_name', name);
     setAdminAuthed(true);
     setAdminName(name);
+    setTab('reports');
   };
   const setupAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);

@@ -174,18 +174,6 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
   );
 }
 
-function HomeView({ onGoAdmin }) {
-  return (
-    <div style={{ maxWidth: 480, margin: '0 auto', padding: '80px 20px', textAlign: 'center' }}>
-      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>ระบบรายงานการตอกเสาเข็ม</div>
-      <div style={{ fontSize: 14, color: '#9a958d', marginBottom: 28, lineHeight: 1.7 }}>
-        พนักงานกรุณาใช้ลิงก์ประจำตัวที่ได้รับจากบริษัทเพื่อกรอกรายงาน — หากยังไม่มีลิงก์ ติดต่อส่วนกลาง
-      </div>
-      <button onClick={onGoAdmin} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '12px 22px', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>เข้าหน้าแอดมิน / รายงานรวม →</button>
-    </div>
-  );
-}
-
 function WorkerFormView({ worker, workerFull, reports, homes, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, onSetHome }) {
   const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ pile: '', count: '' }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceKm: '', workType: 'pile', note: '' };
   const [f, setF] = useState(editingReport ? {
@@ -1133,7 +1121,7 @@ function App() {
   const [rates, setRates] = useState({ car: 250, moto: 100 });
   const [admins, setAdmins] = useState([]);
 
-  const [view, setView] = useState('home');
+  const [view, setView] = useState('admin');
   const [worker, setWorker] = useState(null);
   const [tab, setTab] = useState('reports');
   const [adminAuthed, setAdminAuthed] = useState(sessionStorage.getItem('field_admin_authed') === '1');
@@ -1321,9 +1309,7 @@ function App() {
   return (
     <div style={{ minHeight: '100vh', background: '#23262b', color: '#e9e6e1' }}>
       <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={tab}
-        onHome={() => setView('home')} onAdminTab={setTab} onLogout={logoutAdmin} />
-
-      {view === 'home' && <HomeView onGoAdmin={() => setView('admin')} />}
+        onHome={() => setView('admin')} onAdminTab={setTab} onLogout={logoutAdmin} />
 
       {view === 'form' && (
         <WorkerFormView

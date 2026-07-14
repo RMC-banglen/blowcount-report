@@ -750,7 +750,7 @@ function monthBounds(m) {
   return [m + '-01', m + '-' + String(new Date(y, mm, 0).getDate()).padStart(2, '0')];
 }
 
-function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv }) {
+function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const currentMonth = todayIso.slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
@@ -766,6 +766,18 @@ function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPri
   if (filterSite) filtered = filtered.filter(r => r.site.trim() === filterSite);
   if (monthFrom) filtered = filtered.filter(r => r.date >= monthFrom);
   if (monthTo) filtered = filtered.filter(r => r.date <= monthTo);
+
+  // reports merged with leave/holiday entries for the on-screen list, so admins can see
+  // at a glance whether a worker was off instead of just missing from the reports
+  let displayItems = [
+    ...reports.map(r => ({ kind: 'report', date: r.date, worker: r.worker, sortId: r.id, report: r })),
+    ...leaves.map(l => ({ kind: 'leave', date: l.date, worker: l.worker, sortId: l.id, leave: l })),
+  ];
+  if (filterWorker) displayItems = displayItems.filter(x => x.worker === filterWorker);
+  if (filterSite) displayItems = displayItems.filter(x => x.kind === 'report' && x.report.site.trim() === filterSite);
+  if (monthFrom) displayItems = displayItems.filter(x => x.date >= monthFrom);
+  if (monthTo) displayItems = displayItems.filter(x => x.date <= monthTo);
+  displayItems.sort((a, b) => b.date.localeCompare(a.date) || b.sortId - a.sortId);
 
   return (
     <div>
@@ -796,15 +808,33 @@ function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPri
         </div>
       </div>
 
-      {filtered.length === 0 && (
+      {displayItems.length === 0 && (
         <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>
           {filterMonth === currentMonth ? ('วันนี้ ' + thDate(todayIso) + ' ยังไม่มีข้อมูล') : 'ยังไม่มีรายงาน — เมื่อพนักงานกรอกข้อมูล จะแสดงที่นี่'}
         </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {filtered.map(r => (
-          <div key={r.id} className="rg-stack" style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
+        {displayItems.map(item => {
+          if (item.kind === 'leave') {
+            const l = item.leave;
+            return (
+              <div key={'l-' + l.id} className="rg-stack" style={{ ...card, borderLeft: '4px solid #f0b98c', padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{l.worker}</div>
+                  <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(l.date)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#f0b98c' }}>🏖 {leaveTypeTh(l.leaveType)}</div>
+                  {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {l.reason}</div>}
+                </div>
+                <div />
+              </div>
+            );
+          }
+          const r = item.report;
+          return (
+          <div key={'r-' + r.id} className="rg-stack" style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
             <div>
               <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{r.worker}</div>
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(r.date)}</div>
@@ -826,7 +856,8 @@ function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPri
               <button onClick={() => { if (confirm('ลบรายงานของ ' + r.worker + ' วันที่ ' + thDate(r.date) + '?')) onDelete(r.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1520,7 +1551,7 @@ function App() {
 
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
-          {tab === 'reports' && <AdminReportsTab reports={reports} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} />}
+          {tab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} />}
           {tab === 'piles' && <AdminPilesTab reports={reports} />}
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}

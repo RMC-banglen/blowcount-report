@@ -188,7 +188,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
     { key: 'workers', label: 'พนักงาน' }, { key: 'admins', label: 'ผู้ดูแล' },
   ];
   return (
-    <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, position: 'sticky', top: 0, zIndex: 50 }}>
+    <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, minHeight: 58, position: 'sticky', top: 0, zIndex: 50 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={onHome}>
         <img src="./logo.png" alt="RMC" style={{ height: 38, background: '#fff', borderRadius: 8, padding: '3px 7px' }} />
         <div>

@@ -149,11 +149,11 @@ function composePileStr(it) {
   if (!it.shape || !size || !it.length) return '';
   let s = it.shape + '-' + size + ' x ' + Number(it.length).toFixed(2) + ' เมตร';
   s += ' (' + (it.standard === 'โรงงาน' ? 'โรงงาน' : 'มอก.') + ')';
-  s += ' ' + (it.joint === 'single' ? 'ท่อนเดี่ยว' : '2ท่อนต่อเชื่อม');
+  s += ' ' + (it.joint === 'single' ? 'ท่อนเดี่ยว' : (Number(it.jointCount) || 2) + 'ท่อนต่อเชื่อม');
   if ((it.extra || '').trim()) s += ' ' + it.extra.trim();
   return s;
 }
-const blankPileItem = { mode: 'picker', shape: 'I', standard: 'มอก', size: '', sizeCustom: '', length: '', joint: 'double', extra: '', pileText: '', count: '' };
+const blankPileItem = { mode: 'picker', shape: 'I', standard: 'มอก', size: '', sizeCustom: '', length: '', joint: 'double', jointCount: '2', extra: '', pileText: '', count: '' };
 const legacyPileItem = (i) => ({ ...blankPileItem, mode: 'text', pileText: i.pile, count: String(i.count) });
 
 async function sha256Hex(text) {
@@ -483,9 +483,16 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                                 <span style={{ fontSize: 13, color: '#9a958d' }}>เมตร</span>
                               </div>
                               <div style={{ display: 'flex', gap: 6 }}>
-                                <button onClick={() => patchItem(i, { joint: 'double' })} style={smallBtn(it.joint === 'double')}>2ท่อนต่อเชื่อม</button>
+                                <button onClick={() => patchItem(i, { joint: 'double' })} style={smallBtn(it.joint === 'double')}>ต่อเชื่อม</button>
                                 <button onClick={() => patchItem(i, { joint: 'single' })} style={smallBtn(it.joint === 'single')}>ท่อนเดี่ยว</button>
                               </div>
+                              {it.joint === 'double' && (
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                  <span style={{ fontSize: 13, color: '#9a958d' }}>จำนวนท่อนที่ต่อ</span>
+                                  <input type="number" min="2" value={it.jointCount} onChange={e => patchItem(i, { jointCount: e.target.value })} style={{ background: '#2c2f35', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 14, fontWeight: 700, width: 70, textAlign: 'center' }} />
+                                  <span style={{ fontSize: 13, color: '#9a958d' }}>ท่อน</span>
+                                </div>
+                              )}
                               <input type="text" value={it.extra} onChange={e => patchItem(i, { extra: e.target.value })} placeholder="รายการพิเศษต่อท้าย (ไม่บังคับ) เช่น 4-DB12x3.00ม." style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 13 }} />
                             </>
                           )}

@@ -635,6 +635,27 @@ const PIN_RE = /^\d{4}$/;
 const onlyDigits4 = v => v.replace(/\D/g, '').slice(0, 4);
 const pinBoxStyle = { ...inputStyle, textAlign: 'center', fontSize: 26, letterSpacing: 10, fontWeight: 800 };
 
+function PinDots({ length, max = 4 }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', margin: '4px 0 22px' }}>
+      {Array.from({ length: max }).map((_, i) => (
+        <div key={i} style={{ width: 14, height: 14, borderRadius: '50%', background: i < length ? '#e8762d' : '#4a4f58', transition: 'background .15s' }} />
+      ))}
+    </div>
+  );
+}
+function PinKeypad({ onDigit, onBackspace }) {
+  const keyStyle = { background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 10, padding: '18px 0', fontSize: 22, fontWeight: 800, cursor: 'pointer' };
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+      {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => <button key={k} onClick={() => onDigit(k)} style={keyStyle}>{k}</button>)}
+      <div />
+      <button onClick={() => onDigit('0')} style={keyStyle}>0</button>
+      <button onClick={onBackspace} style={keyStyle}>⌫</button>
+    </div>
+  );
+}
+
 function CompanyHeader() {
   return (
     <div style={{ textAlign: 'center', marginBottom: 40 }}>
@@ -660,11 +681,12 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
     if (pin !== pin2) return setError('รหัส PIN ไม่ตรงกัน');
     await onSetup(name.trim(), pin, position.trim());
   };
-  const submitLogin = async () => {
-    const ok = await onLogin(selected, pin);
+  const submitLogin = async (p) => {
+    const ok = await onLogin(selected, p ?? pin);
     if (!ok) { setError('รหัส PIN ไม่ถูกต้อง'); setPin(''); }
   };
   const onKey = (e, fn) => { if (e.key === 'Enter') fn(); };
+  useEffect(() => { if (selected && pin.length === 4) submitLogin(pin); }, [pin, selected]);
 
   if (firstUse) {
     return (
@@ -726,11 +748,14 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
           <div style={{ fontSize: 18, fontWeight: 800 }}>{selected}</div>
           <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>กรอกรหัส PIN เพื่อเข้าสู่ระบบ</div>
         </div>
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <input type="password" inputMode="numeric" maxLength={4} autoFocus value={pin} onChange={e => { setPin(onlyDigits4(e.target.value)); setError(''); }} onKeyDown={e => onKey(e, submitLogin)} placeholder="PIN" style={pinBoxStyle} />
-          {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
-          <button onClick={submitLogin} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>เข้าสู่ระบบ</button>
-          <button onClick={() => { setSelected(null); setPin(''); setError(''); }} style={{ background: 'none', border: 'none', color: '#9a958d', fontSize: 13, cursor: 'pointer', padding: 4 }}>← เลือกชื่ออื่น</button>
+        <div style={{ padding: '20px 24px 24px' }}>
+          <PinDots length={pin.length} />
+          <PinKeypad
+            onDigit={d => { setPin(prev => prev.length >= 4 ? prev : prev + d); setError(''); }}
+            onBackspace={() => { setPin(prev => prev.slice(0, -1)); setError(''); }}
+          />
+          {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 14, textAlign: 'center' }}>{error}</div>}
+          <button onClick={() => { setSelected(null); setPin(''); setError(''); }} style={{ background: 'none', border: 'none', color: '#9a958d', fontSize: 13, cursor: 'pointer', padding: 4, marginTop: 14, width: '100%' }}>← เลือกชื่ออื่น</button>
         </div>
       </div>
     </div>

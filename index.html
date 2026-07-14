@@ -694,6 +694,20 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
   };
   const onKey = (e, fn) => { if (e.key === 'Enter') fn(); };
   useEffect(() => { if (selected && pin.length === 4) submitLogin(pin); }, [pin, selected]);
+  useEffect(() => {
+    if (!selected) return;
+    const handler = (e) => {
+      if (/^[0-9]$/.test(e.key)) {
+        setPin(prev => prev.length >= 4 ? prev : prev + e.key);
+        setError('');
+      } else if (e.key === 'Backspace') {
+        setPin(prev => prev.slice(0, -1));
+        setError('');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selected]);
 
   if (firstUse) {
     return (

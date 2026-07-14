@@ -321,7 +321,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   for (const r of mine) if (!myByDate[r.date]) myByDate[r.date] = r;
   const myDays = Object.keys(myByDate).length;
   const myTotalPiles = mine.reduce((sum, r) => sum + r.items.reduce((s, it) => s + (Number(it.count) || 0), 0), 0);
-  const myMoney = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType) + fieldMoney(r) + (Number(r.tollFee) || 0), 0);
+  const myMoney = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType) + fieldMoney(r), 0);
   const [hy, hm] = historyMonth.split('-').map(Number);
   const historyMonthTh = MONTHS_TH[hm - 1] + ' ' + (hy + 543);
 
@@ -1124,7 +1124,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
     for (const r of mine) if (!byDate[r.date]) byDate[r.date] = r;
     const days = Object.keys(byDate).length;
     let money = 0;
-    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType) + fieldMoney(byDate[d]) + (Number(byDate[d].tollFee) || 0);
+    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType) + fieldMoney(byDate[d]);
     const agg = {}; let total = 0;
     for (const r of mine) for (const it of r.items) {
       const k = r.site + '||' + it.pile;
@@ -1184,7 +1184,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
     const dates = Object.keys(byDate);
     let wear = 0, field = 0, toll = 0;
     for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates, byDate[d].workType); field += fieldMoney(byDate[d]); toll += Number(byDate[d].tollFee) || 0; }
-    return { nick: w.nick, fullName: w.full_name, days: dates.length, wear, field, toll, money: wear + field + toll };
+    return { nick: w.nick, fullName: w.full_name, days: dates.length, wear, field, toll, money: wear + field };
   }).filter(c => c.days > 0);
   const grandTotal = rows.reduce((a, c) => a + c.money, 0);
   const [y, m] = month.split('-').map(Number);

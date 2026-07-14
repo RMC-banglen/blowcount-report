@@ -1244,7 +1244,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
   );
 }
 
-function AdminLeavesTab({ workers, leaves }) {
+function AdminLeavesTab({ workers, leaves, onDelete }) {
   const currentMonth = new Date().toISOString().slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
   const [filterMonth, setFilterMonth] = useState(currentMonth);
@@ -1296,7 +1296,7 @@ function AdminLeavesTab({ workers, leaves }) {
 
       <div style={{ ...card, overflow: 'hidden' }}>
         {filtered.map(l => (
-          <div key={l.id} className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '110px 100px 1fr', gap: 14, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
+          <div key={l.id} className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '110px 100px 1fr auto', gap: 14, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ fontSize: 13, color: '#9a958d' }}>{thDate(l.date)}</div>
             <div style={{ fontWeight: 800, fontSize: 14, color: '#e8762d' }}>{l.worker}</div>
             <div>
@@ -1304,6 +1304,7 @@ function AdminLeavesTab({ workers, leaves }) {
               {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 2 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
               {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 2, fontStyle: 'italic' }}>📝 {l.reason}</div>}
             </div>
+            <button onClick={() => { if (confirm('ลบวันหยุด/ลาของ ' + l.worker + ' วันที่ ' + thDate(l.date) + '?')) onDelete(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
           </div>
         ))}
       </div>
@@ -1685,7 +1686,7 @@ function App() {
           {tab === 'piles' && <AdminPilesTab reports={reports} />}
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
-          {tab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} />}
+          {tab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}
           {tab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
           {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
         </div>

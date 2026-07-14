@@ -1227,7 +1227,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
 
       <div style={{ ...card, overflow: 'hidden' }}>
         <div className="car-header-row" style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.9fr 0.9fr 0.9fr 0.9fr', background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d', gap: 8 }}>
-          <div>พนักงาน</div><div style={{ textAlign: 'center' }}>ออกสนาม (วัน)</div><div style={{ textAlign: 'right' }}>ค่าสึกหรอ (บาท)</div><div style={{ textAlign: 'right' }}>ค่าออกสนาม (บาท)</div><div style={{ textAlign: 'right' }}>ค่าทางด่วน (บาท)</div><div style={{ textAlign: 'right' }}>รวม (บาท)</div>
+          <div>พนักงาน</div><div style={{ textAlign: 'center' }}>ออกสนาม (วัน)</div><div style={{ textAlign: 'right' }}>ค่าสึกหรอ (บาท)</div><div style={{ textAlign: 'right' }}>ค่าออกสนาม (บาท)</div><div style={{ textAlign: 'right' }}>รวม (บาท)</div><div style={{ textAlign: 'right' }}>รวมค่าทางด่วน (บาท)<br /><span style={{ fontWeight: 400, fontSize: 11, color: '#6b6f76' }}>(จ่ายผ่านบัตรบริษัท)</span></div>
         </div>
         {rows.map(c => (
           <div key={c.nick} className="car-row" style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.9fr 0.9fr 0.9fr 0.9fr', padding: '12px 18px', fontSize: 14, borderBottom: '1px solid #3a3e45', gap: 8, alignItems: 'center' }}>
@@ -1235,8 +1235,8 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
             <div style={{ textAlign: 'center' }}><span className="mobile-label">ออกสนาม: </span>{c.days} <span className="mobile-label">วัน</span></div>
             <div style={{ textAlign: 'right' }}><span className="mobile-label">ค่าสึกหรอ: </span>{num(c.wear)}</div>
             <div style={{ textAlign: 'right' }}><span className="mobile-label">ค่าออกสนาม: </span>{num(c.field)}</div>
-            <div style={{ textAlign: 'right' }}><span className="mobile-label">ค่าทางด่วน: </span>{num(c.toll)}</div>
             <div style={{ textAlign: 'right', fontWeight: 800, color: '#f0b98c', fontSize: 16 }}><span className="mobile-label">รวม: </span>{num(c.money)}</div>
+            <div style={{ textAlign: 'right' }}><span className="mobile-label">รวมค่าทางด่วน: </span>{num(c.toll)}</div>
           </div>
         ))}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', padding: '14px 18px', background: '#1b1d21', alignItems: 'center' }}>
@@ -1415,8 +1415,8 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
               <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'center' }}>ออกสนาม (วัน)</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าสึกหรอ (บาท)</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าออกสนาม (บาท)</th>
-              <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าทางด่วน (บาท)</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>รวม (บาท)</th>
+              <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>รวมค่าทางด่วน (บาท)<br /><span style={{ fontWeight: 400, fontSize: 11, color: '#777' }}>(จ่ายผ่านบัตรบริษัท)</span></th>
             </tr>
           </thead>
           <tbody>
@@ -1426,13 +1426,14 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'center' }}>{c.days}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(c.wear)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(c.field)}</td>
-                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(c.toll)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>{num(c.money)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(c.toll)}</td>
               </tr>
             ))}
             <tr style={{ background: '#f0ede9' }}>
-              <td colSpan="5" style={{ border: '1px solid #ccc', padding: '8px 10px', fontWeight: 800 }}>รวมทั้งหมด</td>
+              <td colSpan="4" style={{ border: '1px solid #ccc', padding: '8px 10px', fontWeight: 800 }}>รวมทั้งหมด</td>
               <td style={{ border: '1px solid #ccc', padding: '8px 10px', textAlign: 'right', fontWeight: 800, fontSize: 15 }}>{num(grandTotal)}</td>
+              <td style={{ border: '1px solid #ccc', padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{num(rows.reduce((a, c) => a + c.toll, 0))}</td>
             </tr>
           </tbody>
         </table>

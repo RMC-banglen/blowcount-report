@@ -116,14 +116,6 @@ function thDate(iso) {
   return d + ' ' + MONTHS_TH_SHORT[m - 1] + ' ' + (y + 543);
 }
 
-const WORKER_EDIT_WINDOW_DAYS = 7;
-function daysSince(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const then = new Date(y, m - 1, d);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  return Math.round((today - then) / 86400000);
-}
-function withinWorkerEditWindow(iso) { return daysSince(iso) <= WORKER_EDIT_WINDOW_DAYS; }
 
 // cumulative count for site+pile, over reports up to (and optionally excluding) a report id
 function cumFor(reports, site, pile, uptoDate, excludeId) {
@@ -218,7 +210,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
   );
 }
 
-function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave }) {
+function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave, monthLocks }) {
   const [mode, setMode] = useState('report');
   const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
@@ -608,7 +600,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {mine.map(r => {
-              const editable = withinWorkerEditWindow(r.date);
+              const editable = monthLockState(r.date.slice(0, 7), monthLocks) === 'open';
               return (
                 <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -624,7 +616,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                         <button onClick={() => { if (confirm('ลบรายงานนี้?')) onDelete(r.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }} title={'แก้ไขได้เฉพาะภายใน ' + WORKER_EDIT_WINDOW_DAYS + ' วันหลังวันที่รายงาน'}>🔒 เกินกำหนดแก้ไข</div>
+                      <div style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }} title="เดือนนี้ถูกยืนยันข้อมูลแล้ว ไม่สามารถแก้ไขได้">🔒 ยืนยันข้อมูลแล้ว</div>
                     )}
                   </div>
                 </div>
@@ -750,6 +742,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const [addOpen, setAddOpen] = useState(false);
   const [aName, setAName] = useState('');
   const [aPosition, setAPosition] = useState('');
+  const [aCanConfirm, setACanConfirm] = useState(false);
   const [aPin, setAPin] = useState('');
   const [aPin2, setAPin2] = useState('');
   const [aError, setAError] = useState('');
@@ -757,24 +750,25 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const [editTarget, setEditTarget] = useState(null);
   const [eName, setEName] = useState('');
   const [ePosition, setEPosition] = useState('');
+  const [eCanConfirm, setECanConfirm] = useState(false);
   const [ePin, setEPin] = useState('');
   const [ePin2, setEPin2] = useState('');
   const [eError, setEError] = useState('');
 
   const pinInput = { ...inputStyle, padding: '10px 12px' };
 
-  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPosition(''); setAPin(''); setAPin2(''); setAError(''); };
+  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPosition(''); setACanConfirm(false); setAPin(''); setAPin2(''); setAError(''); };
   const submitAdd = async () => {
     const n = aName.trim();
     if (!n) return setAError('กรุณากรอกชื่อผู้ดูแล');
     if (admins.some(a => a.name === n)) return setAError('ชื่อ "' + n + '" มีอยู่แล้ว');
     if (!PIN_RE.test(aPin)) return setAError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
     if (aPin !== aPin2) return setAError('รหัส PIN ไม่ตรงกัน');
-    await onAdd(n, aPin, aPosition.trim());
+    await onAdd(n, aPin, aPosition.trim(), aCanConfirm);
     setAddOpen(false);
   };
 
-  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPosition(a.position || ''); setEPin(''); setEPin2(''); setEError(''); };
+  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPosition(a.position || ''); setECanConfirm(!!a.canConfirmMonth); setEPin(''); setEPin2(''); setEError(''); };
   const submitEdit = async () => {
     const n = eName.trim();
     if (!n) return setEError('กรุณากรอกชื่อผู้ดูแล');
@@ -785,7 +779,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
       if (ePin !== ePin2) return setEError('รหัส PIN ไม่ตรงกัน');
       hash = await sha256Hex(ePin);
     }
-    await onEdit(editTarget, n, hash, ePosition.trim());
+    await onEdit(editTarget, n, hash, ePosition.trim(), eCanConfirm);
     setEditTarget(null);
   };
 
@@ -822,6 +816,10 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                   <input type="password" inputMode="numeric" maxLength={4} value={aPin2} onChange={e => { setAPin2(onlyDigits4(e.target.value)); setAError(''); }} style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
                 </label>
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer' }}>
+                <input type="checkbox" checked={aCanConfirm} onChange={e => setACanConfirm(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 13, color: '#e9e6e1' }}>สามารถยืนยันข้อมูลรายเดือนได้ (หัวหน้าฝ่ายสนาม)</span>
+              </label>
               {!!aError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{aError}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button onClick={submitAdd} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '10px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>บันทึก</button>
@@ -849,6 +847,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                       {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
                     </div>
                     {!!a.position && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{a.position}</div>}
+                    {!!a.canConfirmMonth && <div style={{ fontSize: 11, color: '#6dbf5b', marginTop: 2, fontWeight: 600 }}>🔑 ยืนยันข้อมูลรายเดือนได้</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {canEdit && <button onClick={() => openEdit(a)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>}
@@ -875,6 +874,10 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                       <input type="password" inputMode="numeric" maxLength={4} value={ePin2} onChange={e => { setEPin2(onlyDigits4(e.target.value)); setEError(''); }} style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
                     </label>
                   </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={eCanConfirm} onChange={e => setECanConfirm(e.target.checked)} style={{ width: 16, height: 16 }} />
+                    <span style={{ fontSize: 13, color: '#e9e6e1' }}>สามารถยืนยันข้อมูลรายเดือนได้ (หัวหน้าฝ่ายสนาม)</span>
+                  </label>
                   {!!eError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{eError}</div>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                     <button onClick={submitEdit} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '10px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>บันทึก</button>
@@ -896,7 +899,19 @@ function monthBounds(m) {
   return [m + '-01', m + '-' + String(new Date(y, mm, 0).getDate()).padStart(2, '0')];
 }
 
-function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv }) {
+// 'open': not locked yet, anyone can edit. 'grace': locked, only confirm-permission
+// admins can edit (until the 10th of the following month). 'frozen': no one can edit.
+function monthLockState(month, monthLocks) {
+  if (!monthLocks.some(l => l.month === month)) return 'open';
+  const [y, m] = month.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const cutoff = ny + '-' + String(nm).padStart(2, '0') + '-10';
+  const todayIso = new Date().toISOString().slice(0, 10);
+  return todayIso <= cutoff ? 'grace' : 'frozen';
+}
+
+function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, monthLocks, canConfirmMonth, onLockMonth }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const currentMonth = todayIso.slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
@@ -906,6 +921,12 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
   const reportMonths = [...new Set(reports.map(r => r.date.slice(0, 7)))];
   const monthOptions = [...new Set([currentMonth, ...reportMonths])].sort().reverse();
   const [monthFrom, monthTo] = monthBounds(filterMonth);
+  const filterLock = filterMonth ? monthLocks.find(l => l.month === filterMonth) : null;
+  const filterLockState = filterMonth ? monthLockState(filterMonth, monthLocks) : 'open';
+  const canEditReport = (r) => {
+    const state = monthLockState(r.date.slice(0, 7), monthLocks);
+    return state === 'open' || (state === 'grace' && canConfirmMonth);
+  };
 
   let filtered = reports.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   if (filterWorker) filtered = filtered.filter(r => r.worker === filterWorker);
@@ -954,6 +975,23 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
         </div>
       </div>
 
+      {!!filterMonth && (
+        <div style={{ ...card, padding: '12px 16px', marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          {filterLock ? (
+            <div style={{ fontSize: 13, color: filterLockState === 'frozen' ? '#9a958d' : '#f0b98c' }}>
+              🔒 ยืนยันข้อมูลเดือนนี้แล้ว โดย <b>{filterLock.locked_by}</b> เมื่อ {thDate(filterLock.locked_at.slice(0, 10))}
+              {filterLockState === 'grace' && <span> — {canConfirmMonth ? 'คุณยังแก้ไขได้ถึงวันที่ 10 ของเดือนถัดไป' : 'เฉพาะหัวหน้าฝ่ายสนามแก้ไขได้ถึงวันที่ 10 ของเดือนถัดไป'}</span>}
+              {filterLockState === 'frozen' && <span> — พ้นกำหนดแก้ไขแล้ว ไม่มีใครแก้ไขได้อีก</span>}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: '#9a958d' }}>ยังไม่ได้ยืนยันข้อมูลเดือนนี้ — พนักงานยังแก้ไขรายงานของตัวเองได้</div>
+          )}
+          {canConfirmMonth && !filterLock && (
+            <button onClick={() => { if (confirm('ยืนยันข้อมูลเดือนนี้? หลังจากนี้พนักงานจะแก้ไขรายงานเองไม่ได้ (คุณยังแก้ไขได้ถึงวันที่ 10 ของเดือนถัดไป)')) onLockMonth(filterMonth); }} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>✓ ยืนยันข้อมูลเดือนนี้</button>
+          )}
+        </div>
+      )}
+
       {displayItems.length === 0 && (
         <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>
           {filterMonth === currentMonth ? ('วันนี้ ' + thDate(todayIso) + ' ยังไม่มีข้อมูล') : 'ยังไม่มีรายงาน — เมื่อพนักงานกรอกข้อมูล จะแสดงที่นี่'}
@@ -999,8 +1037,14 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
               {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {r.note}</div>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button onClick={() => onEdit(r)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
-              <button onClick={() => { if (confirm('ลบรายงานของ ' + r.worker + ' วันที่ ' + thDate(r.date) + '?')) onDelete(r.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+              {canEditReport(r) ? (
+                <>
+                  <button onClick={() => onEdit(r)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+                  <button onClick={() => { if (confirm('ลบรายงานของ ' + r.worker + ' วันที่ ' + thDate(r.date) + '?')) onDelete(r.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }} title="เดือนนี้ถูกยืนยันข้อมูลแล้ว">🔒 ยืนยันแล้ว</div>
+              )}
             </div>
           </div>
           );
@@ -1490,6 +1534,7 @@ function App() {
   const [leaves, setLeaves] = useState([]);
   const [rates, setRates] = useState({ car: 250, moto: 100 });
   const [admins, setAdmins] = useState([]);
+  const [monthLocks, setMonthLocks] = useState([]);
 
   const [view, setView] = useState('admin');
   const [worker, setWorker] = useState(null);
@@ -1501,16 +1546,18 @@ function App() {
 
   const load = useCallback(async () => {
     try {
-      const [wRes, rRes, sRes, lRes] = await Promise.all([
+      const [wRes, rRes, sRes, lRes, mRes] = await Promise.all([
         DB.from('field_workers').select('*').order('created_at', { ascending: true }),
         DB.from('field_reports').select('*').order('date', { ascending: false }),
         DB.from('field_settings').select('*'),
         DB.from('field_leaves').select('*').order('date', { ascending: false }),
+        DB.from('field_month_locks').select('*'),
       ]);
       if (wRes.error) throw wRes.error;
       if (rRes.error) throw rRes.error;
       if (sRes.error) throw sRes.error;
       if (lRes.error) throw lRes.error;
+      if (mRes.error) throw mRes.error;
 
       setWorkers(wRes.data || []);
       setReports((rRes.data || []).map(r => ({
@@ -1520,6 +1567,7 @@ function App() {
         workType: r.work_type, note: r.note || ''
       })));
       setLeaves((lRes.data || []).map(l => ({ id: l.id, worker: l.worker_nick, date: l.date, leaveType: l.leave_type, reason: l.reason || '' })));
+      setMonthLocks(mRes.data || []);
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100 });
       let adminUsers = [];
@@ -1590,6 +1638,11 @@ function App() {
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     await load();
   };
+  const lockMonth = async (month) => {
+    const { error } = await DB.from('field_month_locks').upsert({ month, locked_by: adminName });
+    if (error) return alert('ยืนยันไม่สำเร็จ: ' + error.message);
+    await load();
+  };
   const saveWorker = async ({ fullName, nick, editingNick }) => {
     if (editingNick && editingNick !== nick) {
       const { error: insErr } = await DB.from('field_workers').insert({ nick, full_name: fullName });
@@ -1642,15 +1695,15 @@ function App() {
     setAdminAuthed(false);
     setAdminName('');
   };
-  const addAdmin = async (name, pw, position) => {
+  const addAdmin = async (name, pw, position, canConfirmMonth) => {
     const hash = await sha256Hex(pw);
-    await saveAdmins([...admins, { name, hash, role: 'admin', position: position || '' }]);
+    await saveAdmins([...admins, { name, hash, role: 'admin', position: position || '', canConfirmMonth: !!canConfirmMonth }]);
   };
   const deleteAdmin = async (name) => {
     await saveAdmins(admins.filter(a => a.name !== name));
   };
-  const editAdmin = async (oldName, newName, newHash, newPosition) => {
-    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position } : a));
+  const editAdmin = async (oldName, newName, newHash, newPosition, newCanConfirmMonth) => {
+    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position, canConfirmMonth: !!newCanConfirmMonth } : a));
     if (ok && oldName === adminName && newName !== oldName) {
       sessionStorage.setItem('field_admin_name', newName);
       setAdminName(newName);
@@ -1697,6 +1750,7 @@ function App() {
           editingReport={editingReport} onCancelEdit={() => setEditingReport(null)}
           onSave={saveReport} onDelete={deleteReport} onEdit={setEditingReport}
           leaves={leaves} onSaveLeave={saveLeave} onDeleteLeave={deleteLeave}
+          monthLocks={monthLocks}
         />
       )}
 
@@ -1706,7 +1760,7 @@ function App() {
 
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
-          {tab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} />}
+          {tab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} />}
           {tab === 'piles' && <AdminPilesTab reports={reports} />}
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}

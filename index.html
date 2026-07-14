@@ -483,7 +483,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                                 <span style={{ fontSize: 13, color: '#9a958d' }}>เมตร</span>
                               </div>
                               <div style={{ display: 'flex', gap: 6 }}>
-                                <button onClick={() => patchItem(i, { joint: 'double' })} style={smallBtn(it.joint === 'double')}>ต่อเชื่อม</button>
+                                <button onClick={() => patchItem(i, { joint: 'double' })} style={smallBtn(it.joint === 'double')}>{it.jointCount || '2'}ท่อนต่อเชื่อม</button>
                                 <button onClick={() => patchItem(i, { joint: 'single' })} style={smallBtn(it.joint === 'single')}>ท่อนเดี่ยว</button>
                               </div>
                               {it.joint === 'double' && (

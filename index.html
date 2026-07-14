@@ -185,7 +185,7 @@ function allowedTabKeysFor(admin) {
 }
 
 function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, allowedTabKeys }) {
-  const adminTabs = [...ADMIN_TABS.filter(t => allowedTabKeys.includes(t.key)), { key: 'admins', label: 'ผู้ดูแล' }];
+  const adminTabs = [...ADMIN_TABS.filter(t => allowedTabKeys.includes(t.key)), { key: 'admins', label: 'จัดการผู้ใช้' }];
   return (
     <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, minHeight: 58, position: 'sticky', top: 0, zIndex: 50 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={onHome}>
@@ -683,7 +683,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
   const [error, setError] = useState('');
 
   const submitSetup = async () => {
-    if (!name.trim()) return setError('กรุณากรอกชื่อผู้ดูแล');
+    if (!name.trim()) return setError('กรุณากรอกชื่อผู้ใช้');
     if (!PIN_RE.test(pin)) return setError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
     if (pin !== pin2) return setError('รหัส PIN ไม่ตรงกัน');
     await onSetup(name.trim(), pin, position.trim());
@@ -715,13 +715,13 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
         <CompanyHeader />
         <div style={{ ...card, overflow: 'hidden' }}>
           <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>ตั้งค่าผู้ดูแลคนแรก</div>
-            <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>ยังไม่มีผู้ดูแล — สร้างบัญชีแรกที่นี่</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>ตั้งค่าผู้ใช้คนแรก</div>
+            <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>ยังไม่มีผู้ใช้ — สร้างบัญชีแรกที่นี่</div>
           </div>
           <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={labelStyle}>ชื่อผู้ดูแล</span>
-              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="เช่น แอดมิน" style={inputStyle} autoFocus />
+              <span style={labelStyle}>ชื่อผู้ใช้</span>
+              <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="เช่น สมชาย" style={inputStyle} autoFocus />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={labelStyle}>ตำแหน่ง <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
@@ -736,7 +736,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
               <input type="password" inputMode="numeric" maxLength={4} value={pin2} onChange={e => { setPin2(onlyDigits4(e.target.value)); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="••••" style={pinBoxStyle} />
             </label>
             {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
-            <button onClick={submitSetup} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>สร้างผู้ดูแลและเข้าสู่ระบบ</button>
+            <button onClick={submitSetup} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>สร้างผู้ใช้และเข้าสู่ระบบ</button>
           </div>
         </div>
       </div>
@@ -753,7 +753,6 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
             <button key={a.name} onClick={() => { setSelected(a.name); setPin(''); setError(''); }} style={{ ...card, padding: '22px 14px', textAlign: 'center', cursor: 'pointer' }}>
               <div style={{ fontWeight: 800, fontSize: 16, color: '#e9e6e1' }}>{a.name}</div>
               {!!a.position && <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 4 }}>{a.position}</div>}
-              <div style={{ fontSize: 12, color: a.role === 'owner' ? '#e8762d' : '#9a958d', marginTop: 6, fontWeight: 700 }}>{a.role === 'owner' ? '★ แอดมินหลัก' : 'ผู้ดูแลระบบ'}</div>
             </button>
           ))}
         </div>
@@ -809,7 +808,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPosition(''); setACanConfirm(false); setATabs(ADMIN_TABS.map(t => t.key)); setAPin(''); setAPin2(''); setAError(''); };
   const submitAdd = async () => {
     const n = aName.trim();
-    if (!n) return setAError('กรุณากรอกชื่อผู้ดูแล');
+    if (!n) return setAError('กรุณากรอกชื่อผู้ใช้');
     if (admins.some(a => a.name === n)) return setAError('ชื่อ "' + n + '" มีอยู่แล้ว');
     if (!PIN_RE.test(aPin)) return setAError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
     if (aPin !== aPin2) return setAError('รหัส PIN ไม่ตรงกัน');
@@ -820,7 +819,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPosition(a.position || ''); setECanConfirm(!!a.canConfirmMonth); setETabs(Array.isArray(a.tabs) ? a.tabs : ADMIN_TABS.map(t => t.key)); setEPin(''); setEPin2(''); setEError(''); };
   const submitEdit = async () => {
     const n = eName.trim();
-    if (!n) return setEError('กรุณากรอกชื่อผู้ดูแล');
+    if (!n) return setEError('กรุณากรอกชื่อผู้ใช้');
     if (n !== editTarget && admins.some(a => a.name === n)) return setEError('ชื่อ "' + n + '" มีอยู่แล้ว');
     let hash = null;
     if (ePin || ePin2) {
@@ -835,21 +834,21 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   return (
     <div>
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>จัดการผู้ดูแลระบบ</div>
-        <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b>{isOwner && <span style={{ color: '#6dbf5b', fontWeight: 700 }}> (แอดมินหลัก)</span>} · ผู้ดูแลทั้งหมด {admins.length} คน</div>
-        {!isOwner && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 4 }}>เฉพาะแอดมินหลักเท่านั้นที่เพิ่ม/ลบผู้ดูแลได้</div>}
+        <div style={{ fontSize: 22, fontWeight: 800 }}>จัดการผู้ใช้</div>
+        <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b>{isOwner && <span style={{ color: '#6dbf5b', fontWeight: 700 }}> (ผู้ใช้หลัก)</span>} · ผู้ใช้ทั้งหมด {admins.length} คน</div>
+        {!isOwner && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 4 }}>เฉพาะผู้ใช้หลักเท่านั้นที่เพิ่ม/ลบผู้ใช้ได้</div>}
       </div>
 
       {isOwner && (
         <div style={{ marginBottom: 18 }}>
           {!addOpen ? (
-            <button onClick={openAdd} style={{ background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '10px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>+ เพิ่มผู้ดูแลใหม่</button>
+            <button onClick={openAdd} style={{ background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '10px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>+ เพิ่มผู้ใช้ใหม่</button>
           ) : (
             <div style={{ ...card, padding: '16px 18px' }}>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ใช้ใหม่</div>
               <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.4fr 1fr 1fr', gap: 10 }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={labelStyle}>ชื่อผู้ดูแล</span>
+                  <span style={labelStyle}>ชื่อผู้ใช้</span>
                   <input type="text" value={aName} onChange={e => { setAName(e.target.value); setAError(''); }} placeholder="เช่น หัวหน้าโอ๋" style={pinInput} autoFocus />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -892,7 +891,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
       )}
 
       <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d' }}>รายชื่อผู้ดูแลทั้งหมด</div>
+        <div style={{ background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d' }}>รายชื่อผู้ใช้ทั้งหมด</div>
         {admins.map(a => {
           const canEdit = a.name === currentName || isOwner;
           const canDelete = isOwner && a.name !== currentName && a.role !== 'owner';
@@ -904,7 +903,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
                       {a.name}
-                      {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}
+                      {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ ผู้ใช้หลัก</span>}
                       {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
                     </div>
                     {!!a.position && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{a.position}</div>}
@@ -917,14 +916,14 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {canEdit && <button onClick={() => openEdit(a)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>}
-                    {canDelete && <button onClick={() => { if (confirm('ลบผู้ดูแล "' + a.name + '"?')) onDelete(a.name); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>}
+                    {canDelete && <button onClick={() => { if (confirm('ลบผู้ใช้ "' + a.name + '"?')) onDelete(a.name); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>}
                   </div>
                 </div>
               ) : (
                 <div style={{ padding: '14px 18px', background: '#23262b' }}>
                   <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.4fr 1fr 1fr', gap: 10 }}>
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <span style={labelStyle}>ชื่อผู้ดูแล</span>
+                      <span style={labelStyle}>ชื่อผู้ใช้</span>
                       <input type="text" value={eName} onChange={e => { setEName(e.target.value); setEError(''); }} style={pinInput} autoFocus />
                     </label>
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1657,7 +1656,7 @@ function App() {
       if (!Array.isArray(adminUsers)) adminUsers = [];
       // migrate from the old single-password scheme
       if (!adminUsers.length && settings.admin_password_hash) {
-        adminUsers = [{ name: 'แอดมิน', hash: settings.admin_password_hash, role: 'owner' }];
+        adminUsers = [{ name: 'ผู้ใช้', hash: settings.admin_password_hash, role: 'owner' }];
         await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(adminUsers) });
         await DB.from('field_settings').delete().eq('key', 'admin_password_hash');
       }

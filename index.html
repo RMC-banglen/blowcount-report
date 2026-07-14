@@ -246,7 +246,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         </div>
 
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <span style={labelStyle}>วันที่</span>
               <input type="date" value={f.date} onChange={e => setF(s => ({ ...s, date: e.target.value }))} style={{ ...inputStyle, minWidth: 0 }} />
@@ -300,7 +300,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <span style={labelStyle}>เวลาเข้างาน</span>
               <input type="time" value={f.timeIn} onChange={e => setF(s => ({ ...s, timeIn: e.target.value }))} style={{ ...inputStyle, minWidth: 0 }} />

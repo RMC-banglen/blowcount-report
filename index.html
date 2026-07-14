@@ -220,7 +220,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
 
 function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave }) {
   const [mode, setMode] = useState('report');
-  const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
+  const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,

@@ -73,6 +73,7 @@ const WORK_TYPES = [
   { key: 'pile', label: 'ตอกเสาเข็ม', sub: 'ค่าออกสนามเต็ม' },
   { key: 'clear', label: 'เคลียร์พื้นที่หน้างาน', sub: 'ค่าออกสนาม 50%' },
   { key: 'none', label: 'ไปแต่ไม่ได้ตอก', sub: 'ได้เฉพาะค่าสึกหรอ' },
+  { key: 'office', label: 'อยู่บริษัท', sub: 'ไม่ได้ออกหน้างาน' },
 ];
 
 function fieldRate(km) {
@@ -83,9 +84,9 @@ function fieldRate(km) {
   if (km <= 150) return 170;
   return 220;
 }
-function fieldFactor(workType) { return workType === 'clear' ? 0.5 : workType === 'none' ? 0 : 1; }
+function fieldFactor(workType) { return workType === 'clear' ? 0.5 : (workType === 'none' || workType === 'office') ? 0 : 1; }
 function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile'); }
-function wearRate(vehicle, rates) { return vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
+function wearRate(vehicle, rates, workType) { return workType === 'office' ? 0 : vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
 function vehicleTh(k) { const v = VEHICLES.find(v => v.key === k); return v ? v.label : k; }
 function num(n) { return (Number(n) || 0).toLocaleString('th-TH'); }
 
@@ -211,7 +212,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     const items = f.workType === 'pile' ? f.items.filter(i => i.pile.trim() && Number(i.count) > 0).map(i => ({ pile: i.pile.trim(), count: Number(i.count) })) : [];
     if (!f.site.trim()) return setError('กรุณากรอกชื่อหน่วยงาน');
     if (f.workType === 'pile' && !items.length) return setError('กรุณากรอกชนิดเสาและจำนวนตอกอย่างน้อย 1 รายการ');
-    if (!(Number(f.distanceKm) > 0)) return setError('กรุณากรอกระยะทางไปหน้างาน (กม.)');
+    if (f.workType !== 'office' && !(Number(f.distanceKm) > 0)) return setError('กรุณากรอกระยะทางไปหน้างาน (กม.)');
     const report = {
       id: editingReport ? editingReport.id : Date.now(), worker, date: f.date, site: f.site.trim(),
       items, timeIn: f.timeIn, timeOut: f.timeOut, vehicle: f.vehicle,
@@ -249,7 +250,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   for (const r of mine) if (!myByDate[r.date]) myByDate[r.date] = r;
   const myDays = Object.keys(myByDate).length;
   const myTotalPiles = mine.reduce((sum, r) => sum + r.items.reduce((s, it) => s + (Number(it.count) || 0), 0), 0);
-  const myMoney = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates) + fieldMoney(r), 0);
+  const myMoney = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType) + fieldMoney(r), 0);
   const [hy, hm] = historyMonth.split('-').map(Number);
   const historyMonthTh = MONTHS_TH[hm - 1] + ' ' + (hy + 543);
 
@@ -287,7 +288,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={f.workType === wt.key} label={wt.label} sub={wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
             </div>
           </div>
@@ -338,18 +339,22 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
             </label>
           </div>
 
-          <div>
-            <div style={{ ...labelStyle, marginBottom: 8 }}>ระยะทางไปหน้างาน (กม.)</div>
-            <input type="number" min="0" value={f.distanceKm} onChange={e => setF(s => ({ ...s, distanceKm: e.target.value }))} placeholder="กม." style={{ ...inputStyle, fontWeight: 700, textAlign: 'center' }} />
-            {fieldPreviewVal > 0 && <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท</div>}
-          </div>
-
-          <div>
-            <div style={{ ...labelStyle, marginBottom: 8 }}>รถที่ใช้เดินทาง (สำหรับคิดค่าสึกหรอ)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              {VEHICLES.map(v => <PickerButton key={v.key} active={f.vehicle === v.key} label={v.label} sub={v.sub} onClick={() => setF(s => ({ ...s, vehicle: v.key }))} />)}
+          {f.workType !== 'office' && (
+            <div>
+              <div style={{ ...labelStyle, marginBottom: 8 }}>ระยะทางไปหน้างาน (กม.)</div>
+              <input type="number" min="0" value={f.distanceKm} onChange={e => setF(s => ({ ...s, distanceKm: e.target.value }))} placeholder="กม." style={{ ...inputStyle, fontWeight: 700, textAlign: 'center' }} />
+              {fieldPreviewVal > 0 && <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท</div>}
             </div>
-          </div>
+          )}
+
+          {f.workType !== 'office' && (
+            <div>
+              <div style={{ ...labelStyle, marginBottom: 8 }}>รถที่ใช้เดินทาง (สำหรับคิดค่าสึกหรอ)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                {VEHICLES.map(v => <PickerButton key={v.key} active={f.vehicle === v.key} label={v.label} sub={v.sub} onClick={() => setF(s => ({ ...s, vehicle: v.key }))} />)}
+              </div>
+            </div>
+          )}
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={labelStyle}>หมายเหตุ <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
@@ -393,7 +398,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                 <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(r.date)} · {r.site}</div>
-                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
+                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
                     <div style={{ fontSize: 12, color: '#9a958d', marginTop: 3 }}>{r.timeIn}–{r.timeOut} น. · {vehicleTh(r.vehicle)}</div>
                     {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {r.note}</div>}
                   </div>
@@ -722,7 +727,7 @@ function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPri
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{num(it.count)} ต้น <span style={{ color: '#9a958d', fontWeight: 500 }}>(สะสม {num(cumFor(reports, r.site, it.pile, r.date, null))})</span></span>
                 </div>
               ))}
-              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)' : 'ไปหน้างานแต่ไม่ได้ตอก'}</div>}
+              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก'}</div>}
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 6 }}>เข้า {r.timeIn} · ออก {r.timeOut} · {vehicleTh(r.vehicle)} · {r.distanceKm ? r.distanceKm + ' กม.' : '-'}</div>
               {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {r.note}</div>}
             </div>
@@ -874,7 +879,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
     for (const r of mine) if (!byDate[r.date]) byDate[r.date] = r;
     const days = Object.keys(byDate).length;
     let money = 0;
-    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates) + fieldMoney(byDate[d]);
+    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType) + fieldMoney(byDate[d]);
     const agg = {}; let total = 0;
     for (const r of mine) for (const it of r.items) {
       const k = r.site + '||' + it.pile;
@@ -933,7 +938,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
     for (const r of monthReports) if (r.worker === w.nick && !byDate[r.date]) byDate[r.date] = r;
     const dates = Object.keys(byDate);
     let wear = 0, field = 0;
-    for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates); field += fieldMoney(byDate[d]); }
+    for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates, byDate[d].workType); field += fieldMoney(byDate[d]); }
     return { nick: w.nick, fullName: w.full_name, days: dates.length, wear, field, money: wear + field };
   }).filter(c => c.days > 0);
   const grandTotal = rows.reduce((a, c) => a + c.money, 0);
@@ -1123,7 +1128,7 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 
 function exportCsv(filtered, reports) {
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'หมายเหตุ']];
-  const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : 'ตอกเสาเข็ม';
+  const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : 'ตอกเสาเข็ม';
   for (const r of filtered) {
     const base = [r.date, r.worker, r.site, wtTh(r.workType)];
     const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), r.distanceKm || '', 0, fieldMoney(r), r.note || ''];
@@ -1300,7 +1305,7 @@ function App() {
   const openPrintReports = (filtered, filters) => {
     const rows = filtered.flatMap(r => {
       const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : '') };
-      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-' }];
+      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-' }];
       return r.items.map(it => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)) }));
     });
     const subtitle = [filters.filterWorker && ('พนักงาน: ' + filters.filterWorker), filters.filterSite && ('หน่วยงาน: ' + filters.filterSite),

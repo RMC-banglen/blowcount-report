@@ -75,6 +75,14 @@ const WORK_TYPES = [
   { key: 'none', label: 'ไปแต่ไม่ได้ตอก', sub: 'ได้เฉพาะค่าสึกหรอ' },
   { key: 'office', label: 'อยู่บริษัท', sub: 'ไม่ได้ออกหน้างาน' },
 ];
+const LEAVE_TYPES = [
+  { key: 'sunday', label: 'วันหยุดวันอาทิตย์' },
+  { key: 'holiday', label: 'วันหยุดบริษัท' },
+  { key: 'sick', label: 'ลาป่วย' },
+  { key: 'vacation', label: 'ลาพักร้อน' },
+  { key: 'personal', label: 'ลากิจ' },
+];
+function leaveTypeTh(k) { const t = LEAVE_TYPES.find(t => t.key === k); return t ? t.label : k; }
 
 function fieldRate(km) {
   km = Number(km) || 0;
@@ -145,8 +153,8 @@ function PickerButton({ active, label, sub, onClick }) {
 function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout }) {
   const adminTabs = [
     { key: 'reports', label: 'รายงานรวม' }, { key: 'piles', label: 'ยอดสะสมรายเสา' },
-    { key: 'monthly', label: 'สรุปรายเดือน' }, { key: 'car', label: 'ค่ารถออกสนาม' }, { key: 'workers', label: 'พนักงาน' },
-    { key: 'admins', label: 'ผู้ดูแล' },
+    { key: 'monthly', label: 'สรุปรายเดือน' }, { key: 'car', label: 'ค่ารถออกสนาม' }, { key: 'leaves', label: 'วันหยุดพนักงาน' },
+    { key: 'workers', label: 'พนักงาน' }, { key: 'admins', label: 'ผู้ดูแล' },
   ];
   return (
     <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 58, position: 'sticky', top: 0, zIndex: 50 }}>
@@ -179,7 +187,8 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
   );
 }
 
-function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit }) {
+function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave }) {
+  const [mode, setMode] = useState('report');
   const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ pile: '', count: '' }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceKm: '', workType: 'pile', note: '' };
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
@@ -191,6 +200,19 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const [savedFlash, setSavedFlash] = useState(false);
   const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7));
   const [useLastReport, setUseLastReport] = useState(false);
+
+  const blankLeave = { date: new Date().toISOString().slice(0, 10), leaveType: 'sunday', reason: '' };
+  const [lf, setLf] = useState(blankLeave);
+  const [leaveError, setLeaveError] = useState('');
+  const [leaveSavedFlash, setLeaveSavedFlash] = useState(false);
+  const myLeaves = leaves.filter(l => l.worker === worker).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const submitLeave = () => {
+    if (!lf.date) return setLeaveError('กรุณาเลือกวันที่');
+    onSaveLeave({ id: Date.now(), worker, date: lf.date, leaveType: lf.leaveType, reason: lf.reason.trim() });
+    setLeaveError(''); setLeaveSavedFlash(true);
+    setLf(blankLeave);
+    setTimeout(() => setLeaveSavedFlash(false), 3000);
+  };
 
   useEffect(() => {
     if (editingReport) {
@@ -260,6 +282,68 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 16px 80px' }}>
+      {!editingReport && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+          <button onClick={() => setMode('report')} style={{ flex: 1, padding: '12px 10px', borderRadius: 8, border: '1px solid ' + (mode === 'report' ? '#e8762d' : '#3a3e45'), background: mode === 'report' ? '#e8762d' : '#2c2f35', color: mode === 'report' ? '#1b1d21' : '#c8c3bb', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>รายงานประจำวัน</button>
+          <button onClick={() => setMode('leave')} style={{ flex: 1, padding: '12px 10px', borderRadius: 8, border: '1px solid ' + (mode === 'leave' ? '#e8762d' : '#3a3e45'), background: mode === 'leave' ? '#e8762d' : '#2c2f35', color: mode === 'leave' ? '#1b1d21' : '#c8c3bb', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>แจ้งวันหยุด / ลา</button>
+        </div>
+      )}
+
+      {mode === 'leave' && !editingReport && (
+        <div>
+          {leaveSavedFlash && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 8, padding: '14px 18px', marginBottom: 20, fontWeight: 600, fontSize: 15 }}>✓ บันทึกวันหยุด/ลาเรียบร้อยแล้ว</div>}
+          <div style={{ ...card, overflow: 'hidden' }}>
+            <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>แจ้งวันหยุด / ลา</div>
+              <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>ผู้แจ้ง: <span style={{ color: '#e8762d', fontWeight: 700 }}>{workerFull}</span></div>
+            </div>
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={labelStyle}>วันที่</span>
+                <input type="date" value={lf.date} onChange={e => setLf(s => ({ ...s, date: e.target.value }))} style={inputStyle} />
+              </label>
+              <div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>ประเภท</div>
+                <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {LEAVE_TYPES.map(lt => (
+                    <button key={lt.key} onClick={() => setLf(s => ({ ...s, leaveType: lt.key }))} style={{
+                      padding: '12px 10px', borderRadius: 7, border: '2px solid ' + (lf.leaveType === lt.key ? '#e8762d' : '#4a4f58'),
+                      background: lf.leaveType === lt.key ? '#33291f' : '#23262b', color: lf.leaveType === lt.key ? '#f0b98c' : '#c8c3bb',
+                      fontWeight: 700, fontSize: 14, cursor: 'pointer'
+                    }}>{lt.label}</button>
+                  ))}
+                </div>
+              </div>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={labelStyle}>เหตุผล <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
+                <textarea value={lf.reason} onChange={e => setLf(s => ({ ...s, reason: e.target.value }))} rows="2" placeholder="ระบุเหตุผลเพิ่มเติม (ถ้ามี)" style={{ ...inputStyle, resize: 'vertical' }} />
+              </label>
+              {!!leaveError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{leaveError}</div>}
+              <button onClick={submitLeave} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: 'pointer' }}>บันทึกวันหยุด/ลา</button>
+            </div>
+          </div>
+
+          {myLeaves.length > 0 && (
+            <div style={{ marginTop: 28 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 10, color: '#c8c3bb' }}>ประวัติวันหยุด/ลาของฉัน</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {myLeaves.slice(0, 10).map(l => (
+                  <div key={l.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(l.date)} · {leaveTypeTh(l.leaveType)}</div>
+                      {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {l.reason}</div>}
+                    </div>
+                    <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>ลบ</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(mode === 'report' || editingReport) && (
+      <div style={{ display: 'contents' }}>
       {savedFlash && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 8, padding: '14px 18px', marginBottom: 20, fontWeight: 600, fontSize: 15 }}>✓ บันทึกรายงานเรียบร้อยแล้ว</div>}
 
       <div style={{ ...card, overflow: 'hidden' }}>
@@ -421,6 +505,8 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
             })}
           </div>
         </div>
+      )}
+      </div>
       )}
     </div>
   );
@@ -1002,6 +1088,72 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
   );
 }
 
+function AdminLeavesTab({ workers, leaves }) {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [filterWorker, setFilterWorker] = useState('');
+  const [filterMonth, setFilterMonth] = useState(currentMonth);
+
+  const leaveMonths = [...new Set(leaves.map(l => l.date.slice(0, 7)))];
+  const monthOptions = [...new Set([currentMonth, ...leaveMonths])].sort().reverse();
+  const [monthFrom, monthTo] = monthBounds(filterMonth);
+
+  let filtered = leaves.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  if (filterWorker) filtered = filtered.filter(l => l.worker === filterWorker);
+  if (monthFrom) filtered = filtered.filter(l => l.date >= monthFrom);
+  if (monthTo) filtered = filtered.filter(l => l.date <= monthTo);
+
+  const exportLeavesCsv = () => {
+    const rows = [['วันที่', 'พนักงาน', 'ประเภท', 'เหตุผล']];
+    for (const l of filtered) rows.push([l.date, l.worker, leaveTypeTh(l.leaveType), l.reason || '']);
+    const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'วันหยุดพนักงาน.csv';
+    a.click();
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>วันหยุดพนักงาน</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>ทั้งหมด {filtered.length} รายการ</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <select value={filterWorker} onChange={e => setFilterWorker(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
+            <option value="">พนักงานทุกคน</option>
+            {workers.map(w => <option key={w.nick} value={w.nick}>{w.nick}</option>)}
+          </select>
+          <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
+            <option value="">ทุกเดือน</option>
+            {monthOptions.map(m => {
+              const [yy, mm] = m.split('-').map(Number);
+              return <option key={m} value={m}>{MONTHS_TH[mm - 1]} {yy + 543}</option>;
+            })}
+          </select>
+          <button onClick={() => { setFilterWorker(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
+          <button onClick={exportLeavesCsv} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export CSV</button>
+        </div>
+      </div>
+
+      {filtered.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>ไม่มีข้อมูลวันหยุด/ลาในช่วงที่เลือก</div>}
+
+      <div style={{ ...card, overflow: 'hidden' }}>
+        {filtered.map(l => (
+          <div key={l.id} className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '110px 100px 1fr', gap: 14, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
+            <div style={{ fontSize: 13, color: '#9a958d' }}>{thDate(l.date)}</div>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#e8762d' }}>{l.worker}</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{leaveTypeTh(l.leaveType)}</div>
+              {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 2, fontStyle: 'italic' }}>📝 {l.reason}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PrintReportsView({ rows, subtitle, onClose }) {
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', color: '#1a1a1a' }}>
@@ -1151,6 +1303,7 @@ function App() {
   const [loadError, setLoadError] = useState('');
   const [workers, setWorkers] = useState([]);
   const [reports, setReports] = useState([]);
+  const [leaves, setLeaves] = useState([]);
   const [rates, setRates] = useState({ car: 250, moto: 100 });
   const [admins, setAdmins] = useState([]);
 
@@ -1164,14 +1317,16 @@ function App() {
 
   const load = useCallback(async () => {
     try {
-      const [wRes, rRes, sRes] = await Promise.all([
+      const [wRes, rRes, sRes, lRes] = await Promise.all([
         DB.from('field_workers').select('*').order('created_at', { ascending: true }),
         DB.from('field_reports').select('*').order('date', { ascending: false }),
         DB.from('field_settings').select('*'),
+        DB.from('field_leaves').select('*').order('date', { ascending: false }),
       ]);
       if (wRes.error) throw wRes.error;
       if (rRes.error) throw rRes.error;
       if (sRes.error) throw sRes.error;
+      if (lRes.error) throw lRes.error;
 
       setWorkers(wRes.data || []);
       setReports((rRes.data || []).map(r => ({
@@ -1179,6 +1334,7 @@ function App() {
         timeIn: r.time_in, timeOut: r.time_out, vehicle: r.vehicle, distanceKm: Number(r.distance_km) || 0,
         workType: r.work_type, note: r.note || ''
       })));
+      setLeaves((lRes.data || []).map(l => ({ id: l.id, worker: l.worker_nick, date: l.date, leaveType: l.leave_type, reason: l.reason || '' })));
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100 });
       let adminUsers = [];
@@ -1237,11 +1393,23 @@ function App() {
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     await load();
   };
+  const saveLeave = async (leave) => {
+    const row = { id: leave.id, worker_nick: leave.worker, date: leave.date, leave_type: leave.leaveType, reason: leave.reason };
+    const { error } = await DB.from('field_leaves').upsert(row);
+    if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+    await load();
+  };
+  const deleteLeave = async (id) => {
+    const { error } = await DB.from('field_leaves').delete().eq('id', id);
+    if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
+    await load();
+  };
   const saveWorker = async ({ fullName, nick, editingNick }) => {
     if (editingNick && editingNick !== nick) {
       const { error: insErr } = await DB.from('field_workers').insert({ nick, full_name: fullName });
       if (insErr) return alert('บันทึกไม่สำเร็จ: ' + insErr.message);
       await DB.from('field_reports').update({ worker_nick: nick }).eq('worker_nick', editingNick);
+      await DB.from('field_leaves').update({ worker_nick: nick }).eq('worker_nick', editingNick);
       await DB.from('field_workers').delete().eq('nick', editingNick);
     } else {
       const { error } = await DB.from('field_workers').upsert({ nick, full_name: fullName });
@@ -1342,6 +1510,7 @@ function App() {
           reports={reports} rates={rates} knownSites={knownSites} knownPiles={knownPiles}
           editingReport={editingReport} onCancelEdit={() => setEditingReport(null)}
           onSave={saveReport} onDelete={deleteReport} onEdit={setEditingReport}
+          leaves={leaves} onSaveLeave={saveLeave} onDeleteLeave={deleteLeave}
         />
       )}
 
@@ -1355,6 +1524,7 @@ function App() {
           {tab === 'piles' && <AdminPilesTab reports={reports} />}
           {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
+          {tab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} />}
           {tab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
           {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
         </div>

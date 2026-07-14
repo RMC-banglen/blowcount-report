@@ -173,12 +173,19 @@ function PickerButton({ active, label, sub, onClick }) {
   );
 }
 
-function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout }) {
-  const adminTabs = [
-    { key: 'reports', label: 'รายงานรวม' }, { key: 'piles', label: 'ยอดสะสมรายเสา' },
-    { key: 'monthly', label: 'สรุปรายเดือน' }, { key: 'car', label: 'ค่ารถออกสนาม' }, { key: 'leaves', label: 'วันหยุดพนักงาน' },
-    { key: 'workers', label: 'พนักงาน' }, { key: 'admins', label: 'ผู้ดูแล' },
-  ];
+const ADMIN_TABS = [
+  { key: 'reports', label: 'รายงานรวม' }, { key: 'piles', label: 'ยอดสะสมรายเสา' },
+  { key: 'monthly', label: 'สรุปรายเดือน' }, { key: 'car', label: 'ค่ารถออกสนาม' }, { key: 'leaves', label: 'วันหยุดพนักงาน' },
+  { key: 'workers', label: 'พนักงาน' },
+];
+function allowedTabKeysFor(admin) {
+  if (!admin) return [];
+  if (admin.role === 'owner') return ADMIN_TABS.map(t => t.key);
+  return Array.isArray(admin.tabs) ? admin.tabs : ADMIN_TABS.map(t => t.key);
+}
+
+function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, allowedTabKeys }) {
+  const adminTabs = [...ADMIN_TABS.filter(t => allowedTabKeys.includes(t.key)), { key: 'admins', label: 'ผู้ดูแล' }];
   return (
     <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, minHeight: 58, position: 'sticky', top: 0, zIndex: 50 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={onHome}>
@@ -768,6 +775,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const [aName, setAName] = useState('');
   const [aPosition, setAPosition] = useState('');
   const [aCanConfirm, setACanConfirm] = useState(false);
+  const [aTabs, setATabs] = useState(ADMIN_TABS.map(t => t.key));
   const [aPin, setAPin] = useState('');
   const [aPin2, setAPin2] = useState('');
   const [aError, setAError] = useState('');
@@ -776,24 +784,26 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const [eName, setEName] = useState('');
   const [ePosition, setEPosition] = useState('');
   const [eCanConfirm, setECanConfirm] = useState(false);
+  const [eTabs, setETabs] = useState(ADMIN_TABS.map(t => t.key));
   const [ePin, setEPin] = useState('');
   const [ePin2, setEPin2] = useState('');
   const [eError, setEError] = useState('');
 
   const pinInput = { ...inputStyle, padding: '10px 12px' };
+  const toggleTab = (setter) => (key) => setter(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
 
-  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPosition(''); setACanConfirm(false); setAPin(''); setAPin2(''); setAError(''); };
+  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPosition(''); setACanConfirm(false); setATabs(ADMIN_TABS.map(t => t.key)); setAPin(''); setAPin2(''); setAError(''); };
   const submitAdd = async () => {
     const n = aName.trim();
     if (!n) return setAError('กรุณากรอกชื่อผู้ดูแล');
     if (admins.some(a => a.name === n)) return setAError('ชื่อ "' + n + '" มีอยู่แล้ว');
     if (!PIN_RE.test(aPin)) return setAError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
     if (aPin !== aPin2) return setAError('รหัส PIN ไม่ตรงกัน');
-    await onAdd(n, aPin, aPosition.trim(), aCanConfirm);
+    await onAdd(n, aPin, aPosition.trim(), aCanConfirm, aTabs);
     setAddOpen(false);
   };
 
-  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPosition(a.position || ''); setECanConfirm(!!a.canConfirmMonth); setEPin(''); setEPin2(''); setEError(''); };
+  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPosition(a.position || ''); setECanConfirm(!!a.canConfirmMonth); setETabs(Array.isArray(a.tabs) ? a.tabs : ADMIN_TABS.map(t => t.key)); setEPin(''); setEPin2(''); setEError(''); };
   const submitEdit = async () => {
     const n = eName.trim();
     if (!n) return setEError('กรุณากรอกชื่อผู้ดูแล');
@@ -804,7 +814,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
       if (ePin !== ePin2) return setEError('รหัส PIN ไม่ตรงกัน');
       hash = await sha256Hex(ePin);
     }
-    await onEdit(editTarget, n, hash, ePosition.trim(), eCanConfirm);
+    await onEdit(editTarget, n, hash, ePosition.trim(), eCanConfirm, eTabs);
     setEditTarget(null);
   };
 
@@ -845,6 +855,18 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                 <input type="checkbox" checked={aCanConfirm} onChange={e => setACanConfirm(e.target.checked)} style={{ width: 16, height: 16 }} />
                 <span style={{ fontSize: 13, color: '#e9e6e1' }}>สามารถยืนยันข้อมูลรายเดือนได้ (หัวหน้าฝ่ายสนาม)</span>
               </label>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#9a958d', marginBottom: 6 }}>สิทธิ์เข้าถึงแท็บ</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {ADMIN_TABS.map(t => (
+                    <button key={t.key} onClick={() => toggleTab(setATabs)(t.key)} style={{
+                      padding: '6px 12px', borderRadius: 20, border: '1px solid ' + (aTabs.includes(t.key) ? '#6dbf5b' : '#4a4f58'),
+                      background: aTabs.includes(t.key) ? '#1f3320' : '#23262b', color: aTabs.includes(t.key) ? '#6dbf5b' : '#9a958d',
+                      fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                    }}>{t.label}{aTabs.includes(t.key) ? ' ✓' : ''}</button>
+                  ))}
+                </div>
+              </div>
               {!!aError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{aError}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button onClick={submitAdd} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '10px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>บันทึก</button>
@@ -873,6 +895,11 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                     </div>
                     {!!a.position && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{a.position}</div>}
                     {!!a.canConfirmMonth && <div style={{ fontSize: 11, color: '#6dbf5b', marginTop: 2, fontWeight: 600 }}>🔑 ยืนยันข้อมูลรายเดือนได้</div>}
+                    {a.role !== 'owner' && (
+                      <div style={{ fontSize: 11, color: '#9a958d', marginTop: 4 }}>
+                        เข้าถึง: {allowedTabKeysFor(a).length === ADMIN_TABS.length ? 'ทุกแท็บ' : (ADMIN_TABS.filter(t => allowedTabKeysFor(a).includes(t.key)).map(t => t.label).join(', ') || 'ไม่มี')}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {canEdit && <button onClick={() => openEdit(a)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>}
@@ -899,10 +926,26 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                       <input type="password" inputMode="numeric" maxLength={4} value={ePin2} onChange={e => { setEPin2(onlyDigits4(e.target.value)); setEError(''); }} style={{ ...pinInput, textAlign: 'center', letterSpacing: 4, fontWeight: 800 }} />
                     </label>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={eCanConfirm} onChange={e => setECanConfirm(e.target.checked)} style={{ width: 16, height: 16 }} />
-                    <span style={{ fontSize: 13, color: '#e9e6e1' }}>สามารถยืนยันข้อมูลรายเดือนได้ (หัวหน้าฝ่ายสนาม)</span>
-                  </label>
+                  {a.role !== 'owner' && (
+                    <>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={eCanConfirm} onChange={e => setECanConfirm(e.target.checked)} style={{ width: 16, height: 16 }} />
+                        <span style={{ fontSize: 13, color: '#e9e6e1' }}>สามารถยืนยันข้อมูลรายเดือนได้ (หัวหน้าฝ่ายสนาม)</span>
+                      </label>
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#9a958d', marginBottom: 6 }}>สิทธิ์เข้าถึงแท็บ</div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {ADMIN_TABS.map(t => (
+                            <button key={t.key} onClick={() => toggleTab(setETabs)(t.key)} style={{
+                              padding: '6px 12px', borderRadius: 20, border: '1px solid ' + (eTabs.includes(t.key) ? '#6dbf5b' : '#4a4f58'),
+                              background: eTabs.includes(t.key) ? '#1f3320' : '#23262b', color: eTabs.includes(t.key) ? '#6dbf5b' : '#9a958d',
+                              fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                            }}>{t.label}{eTabs.includes(t.key) ? ' ✓' : ''}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                   {!!eError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{eError}</div>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                     <button onClick={submitEdit} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '10px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>บันทึก</button>
@@ -1701,7 +1744,8 @@ function App() {
     sessionStorage.setItem('field_admin_name', name);
     setAdminAuthed(true);
     setAdminName(name);
-    setTab('reports');
+    const allowed = allowedTabKeysFor(admins.find(a => a.name === name));
+    setTab(allowed.includes('reports') ? 'reports' : (allowed[0] || 'reports'));
   };
   const setupAdmin = async (name, pw, position) => {
     const hash = await sha256Hex(pw);
@@ -1720,15 +1764,15 @@ function App() {
     setAdminAuthed(false);
     setAdminName('');
   };
-  const addAdmin = async (name, pw, position, canConfirmMonth) => {
+  const addAdmin = async (name, pw, position, canConfirmMonth, tabs) => {
     const hash = await sha256Hex(pw);
-    await saveAdmins([...admins, { name, hash, role: 'admin', position: position || '', canConfirmMonth: !!canConfirmMonth }]);
+    await saveAdmins([...admins, { name, hash, role: 'admin', position: position || '', canConfirmMonth: !!canConfirmMonth, tabs: tabs || ADMIN_TABS.map(t => t.key) }]);
   };
   const deleteAdmin = async (name) => {
     await saveAdmins(admins.filter(a => a.name !== name));
   };
-  const editAdmin = async (oldName, newName, newHash, newPosition, newCanConfirmMonth) => {
-    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position, canConfirmMonth: !!newCanConfirmMonth } : a));
+  const editAdmin = async (oldName, newName, newHash, newPosition, newCanConfirmMonth, newTabs) => {
+    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position, canConfirmMonth: !!newCanConfirmMonth, tabs: newTabs || a.tabs } : a));
     if (ok && oldName === adminName && newName !== oldName) {
       sessionStorage.setItem('field_admin_name', newName);
       setAdminName(newName);
@@ -1761,11 +1805,14 @@ function App() {
     if (printPayload.kind === 'car') return <PrintCarView rows={printPayload.rows} grandTotal={printPayload.grandTotal} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
   }
 
+  const myAllowedTabs = allowedTabKeysFor(admins.find(a => a.name === adminName));
+  const effectiveTab = (myAllowedTabs.includes(tab) || tab === 'admins') ? tab : (myAllowedTabs[0] || 'reports');
+
   return (
     <div style={{ minHeight: '100vh', background: '#23262b', color: '#e9e6e1' }}>
       {!(view === 'admin' && !adminAuthed) && (
-        <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={tab}
-          onHome={() => setView('admin')} onAdminTab={setTab} onLogout={logoutAdmin} />
+        <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={effectiveTab}
+          onHome={() => setView('admin')} onAdminTab={setTab} onLogout={logoutAdmin} allowedTabKeys={myAllowedTabs} />
       )}
 
       {view === 'form' && (
@@ -1785,13 +1832,13 @@ function App() {
 
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
-          {tab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} />}
-          {tab === 'piles' && <AdminPilesTab reports={reports} />}
-          {tab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
-          {tab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
-          {tab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}
-          {tab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
-          {tab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
+          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} />}
+          {effectiveTab === 'piles' && <AdminPilesTab reports={reports} />}
+          {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
+          {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
+          {effectiveTab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}
+          {effectiveTab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
+          {effectiveTab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
         </div>
       )}
     </div>

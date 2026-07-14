@@ -657,6 +657,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
   const firstUse = admins.length === 0;
   const [selected, setSelected] = useState(null);
   const [name, setName] = useState('');
+  const [position, setPosition] = useState('');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
   const [error, setError] = useState('');
@@ -665,7 +666,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
     if (!name.trim()) return setError('กรุณากรอกชื่อผู้ดูแล');
     if (!PIN_RE.test(pin)) return setError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
     if (pin !== pin2) return setError('รหัส PIN ไม่ตรงกัน');
-    await onSetup(name.trim(), pin);
+    await onSetup(name.trim(), pin, position.trim());
   };
   const submitLogin = async () => {
     const ok = await onLogin(selected, pin);
@@ -686,6 +687,10 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={labelStyle}>ชื่อผู้ดูแล</span>
               <input type="text" value={name} onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitSetup)} placeholder="เช่น แอดมิน" style={inputStyle} autoFocus />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ตำแหน่ง <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
+              <input type="text" value={position} onChange={e => setPosition(e.target.value)} onKeyDown={e => onKey(e, submitSetup)} placeholder="เช่น หัวหน้าฝ่ายสนาม" style={inputStyle} />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={labelStyle}>รหัส PIN (4 หลัก)</span>
@@ -712,7 +717,8 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
           {admins.map(a => (
             <button key={a.name} onClick={() => { setSelected(a.name); setPin(''); setError(''); }} style={{ ...card, padding: '22px 14px', textAlign: 'center', cursor: 'pointer' }}>
               <div style={{ fontWeight: 800, fontSize: 16, color: '#e9e6e1' }}>{a.name}</div>
-              <div style={{ fontSize: 12, color: a.role === 'owner' ? '#e8762d' : '#9a958d', marginTop: 8, fontWeight: 700 }}>{a.role === 'owner' ? '★ แอดมินหลัก' : 'ผู้ดูแลระบบ'}</div>
+              {!!a.position && <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 4 }}>{a.position}</div>}
+              <div style={{ fontSize: 12, color: a.role === 'owner' ? '#e8762d' : '#9a958d', marginTop: 6, fontWeight: 700 }}>{a.role === 'owner' ? '★ แอดมินหลัก' : 'ผู้ดูแลระบบ'}</div>
             </button>
           ))}
         </div>
@@ -729,7 +735,7 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
           <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>กรอกรหัส PIN เพื่อเข้าสู่ระบบ</div>
         </div>
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <input type="password" inputMode="numeric" autoFocus value={pin} onChange={e => { setPin(e.target.value); setError(''); }} onKeyDown={e => onKey(e, submitLogin)} placeholder="PIN" style={pinBoxStyle} />
+          <input type="password" inputMode="numeric" maxLength={4} autoFocus value={pin} onChange={e => { setPin(onlyDigits4(e.target.value)); setError(''); }} onKeyDown={e => onKey(e, submitLogin)} placeholder="PIN" style={pinBoxStyle} />
           {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
           <button onClick={submitLogin} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 14, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>เข้าสู่ระบบ</button>
           <button onClick={() => { setSelected(null); setPin(''); setError(''); }} style={{ background: 'none', border: 'none', color: '#9a958d', fontSize: 13, cursor: 'pointer', padding: 4 }}>← เลือกชื่ออื่น</button>
@@ -743,30 +749,32 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
   const isOwner = admins.some(a => a.name === currentName && a.role === 'owner');
   const [addOpen, setAddOpen] = useState(false);
   const [aName, setAName] = useState('');
+  const [aPosition, setAPosition] = useState('');
   const [aPin, setAPin] = useState('');
   const [aPin2, setAPin2] = useState('');
   const [aError, setAError] = useState('');
 
   const [editTarget, setEditTarget] = useState(null);
   const [eName, setEName] = useState('');
+  const [ePosition, setEPosition] = useState('');
   const [ePin, setEPin] = useState('');
   const [ePin2, setEPin2] = useState('');
   const [eError, setEError] = useState('');
 
   const pinInput = { ...inputStyle, padding: '10px 12px' };
 
-  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPin(''); setAPin2(''); setAError(''); };
+  const openAdd = () => { setAddOpen(true); setEditTarget(null); setAName(''); setAPosition(''); setAPin(''); setAPin2(''); setAError(''); };
   const submitAdd = async () => {
     const n = aName.trim();
     if (!n) return setAError('กรุณากรอกชื่อผู้ดูแล');
     if (admins.some(a => a.name === n)) return setAError('ชื่อ "' + n + '" มีอยู่แล้ว');
     if (!PIN_RE.test(aPin)) return setAError('รหัส PIN ต้องเป็นตัวเลข 4 หลัก');
     if (aPin !== aPin2) return setAError('รหัส PIN ไม่ตรงกัน');
-    await onAdd(n, aPin);
+    await onAdd(n, aPin, aPosition.trim());
     setAddOpen(false);
   };
 
-  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPin(''); setEPin2(''); setEError(''); };
+  const openEdit = (a) => { setEditTarget(a.name); setAddOpen(false); setEName(a.name); setEPosition(a.position || ''); setEPin(''); setEPin2(''); setEError(''); };
   const submitEdit = async () => {
     const n = eName.trim();
     if (!n) return setEError('กรุณากรอกชื่อผู้ดูแล');
@@ -777,7 +785,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
       if (ePin !== ePin2) return setEError('รหัส PIN ไม่ตรงกัน');
       hash = await sha256Hex(ePin);
     }
-    await onEdit(editTarget, n, hash);
+    await onEdit(editTarget, n, hash, ePosition.trim());
     setEditTarget(null);
   };
 
@@ -796,10 +804,14 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
           ) : (
             <div style={{ ...card, padding: '16px 18px' }}>
               <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
-              <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+              <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.4fr 1fr 1fr', gap: 10 }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <span style={labelStyle}>ชื่อผู้ดูแล</span>
                   <input type="text" value={aName} onChange={e => { setAName(e.target.value); setAError(''); }} placeholder="เช่น หัวหน้าโอ๋" style={pinInput} autoFocus />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={labelStyle}>ตำแหน่ง <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
+                  <input type="text" value={aPosition} onChange={e => setAPosition(e.target.value)} placeholder="เช่น หัวหน้าฝ่ายสนาม" style={pinInput} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <span style={labelStyle}>PIN (4 หลัก)</span>
@@ -830,10 +842,13 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
             <div key={a.name} style={{ borderBottom: '1px solid #3a3e45' }}>
               {!isEditingThis ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 18px' }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>
-                    {a.name}
-                    {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}
-                    {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {a.name}
+                      {a.role === 'owner' && <span style={{ color: '#e8762d', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>★ แอดมินหลัก</span>}
+                      {a.name === currentName && <span style={{ color: '#6dbf5b', fontWeight: 600, fontSize: 12, marginLeft: 8 }}>(คุณ)</span>}
+                    </div>
+                    {!!a.position && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{a.position}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {canEdit && <button onClick={() => openEdit(a)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>}
@@ -842,10 +857,14 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                 </div>
               ) : (
                 <div style={{ padding: '14px 18px', background: '#23262b' }}>
-                  <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                  <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.4fr 1fr 1fr', gap: 10 }}>
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <span style={labelStyle}>ชื่อผู้ดูแล</span>
                       <input type="text" value={eName} onChange={e => { setEName(e.target.value); setEError(''); }} style={pinInput} autoFocus />
+                    </label>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <span style={labelStyle}>ตำแหน่ง <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
+                      <input type="text" value={ePosition} onChange={e => setEPosition(e.target.value)} placeholder="เช่น หัวหน้าฝ่ายสนาม" style={pinInput} />
                     </label>
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <span style={labelStyle}>PIN ใหม่ (ไม่บังคับ)</span>
@@ -1606,9 +1625,9 @@ function App() {
     setAdminName(name);
     setTab('reports');
   };
-  const setupAdmin = async (name, pw) => {
+  const setupAdmin = async (name, pw, position) => {
     const hash = await sha256Hex(pw);
-    if (await saveAdmins([{ name, hash, role: 'owner' }])) beginSession(name);
+    if (await saveAdmins([{ name, hash, role: 'owner', position: position || '' }])) beginSession(name);
   };
   const loginAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);
@@ -1623,15 +1642,15 @@ function App() {
     setAdminAuthed(false);
     setAdminName('');
   };
-  const addAdmin = async (name, pw) => {
+  const addAdmin = async (name, pw, position) => {
     const hash = await sha256Hex(pw);
-    await saveAdmins([...admins, { name, hash, role: 'admin' }]);
+    await saveAdmins([...admins, { name, hash, role: 'admin', position: position || '' }]);
   };
   const deleteAdmin = async (name) => {
     await saveAdmins(admins.filter(a => a.name !== name));
   };
-  const editAdmin = async (oldName, newName, newHash) => {
-    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash } : a));
+  const editAdmin = async (oldName, newName, newHash, newPosition) => {
+    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position } : a));
     if (ok && oldName === adminName && newName !== oldName) {
       sessionStorage.setItem('field_admin_name', newName);
       setAdminName(newName);

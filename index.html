@@ -137,6 +137,25 @@ function cumFor(reports, site, pile, uptoDate, excludeId) {
   return sum;
 }
 
+const PILE_SIZES = ['0.15', '0.18', '0.22', '0.26', '0.30', '0.35', '0.40'];
+function pileSizesFor(shape, standard) {
+  if (shape === 'I') return standard === 'โรงงาน' ? PILE_SIZES.filter(s => s !== '0.40') : PILE_SIZES.filter(s => s !== '0.15');
+  return standard === 'โรงงาน' ? PILE_SIZES.filter(s => s === '0.22' || s === '0.26' || s === '0.30') : PILE_SIZES;
+}
+// builds the saved pile description string, e.g. "I-0.22 x 19.00 เมตร (มอก.) 2ท่อนต่อเชื่อม 4-DB12x3.00ม."
+function composePileStr(it) {
+  if (it.mode === 'text') return (it.pileText || '').trim();
+  const size = it.size === 'custom' ? (it.sizeCustom || '').trim() : it.size;
+  if (!it.shape || !size || !it.length) return '';
+  let s = it.shape + '-' + size + ' x ' + Number(it.length).toFixed(2) + ' เมตร';
+  s += ' (' + (it.standard === 'โรงงาน' ? 'โรงงาน' : 'มอก.') + ')';
+  s += ' ' + (it.joint === 'single' ? 'ท่อนเดี่ยว' : '2ท่อนต่อเชื่อม');
+  if ((it.extra || '').trim()) s += ' ' + it.extra.trim();
+  return s;
+}
+const blankPileItem = { mode: 'picker', shape: 'I', standard: 'มอก', size: '', sizeCustom: '', length: '', joint: 'double', extra: '', pileText: '', count: '' };
+const legacyPileItem = (i) => ({ ...blankPileItem, mode: 'text', pileText: i.pile, count: String(i.count) });
+
 async function sha256Hex(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -201,11 +220,11 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout })
 
 function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave }) {
   const [mode, setMode] = useState('report');
-  const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ pile: '', count: '' }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
+  const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'company', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
-    items: editingReport.items.length ? editingReport.items.map(i => ({ pile: i.pile, count: String(i.count) })) : [{ pile: '', count: '' }],
+    items: editingReport.items.length ? editingReport.items.map(legacyPileItem) : [{ ...blankPileItem }],
     timeIn: editingReport.timeIn, timeOut: editingReport.timeOut, vehicle: editingReport.vehicle,
     distanceLegs: legsFrom(editingReport), tollFee: editingReport.tollFee ? String(editingReport.tollFee) : '',
     workType: editingReport.workType || 'pile', note: editingReport.note || ''
@@ -232,7 +251,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     if (editingReport) {
       setF({
         date: editingReport.date, site: editingReport.site,
-        items: editingReport.items.length ? editingReport.items.map(i => ({ pile: i.pile, count: String(i.count) })) : [{ pile: '', count: '' }],
+        items: editingReport.items.length ? editingReport.items.map(legacyPileItem) : [{ ...blankPileItem }],
         timeIn: editingReport.timeIn, timeOut: editingReport.timeOut, vehicle: editingReport.vehicle,
         distanceLegs: legsFrom(editingReport), tollFee: editingReport.tollFee ? String(editingReport.tollFee) : '',
         workType: editingReport.workType || 'pile', note: editingReport.note || ''
@@ -246,13 +265,13 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const removeLeg = (i) => setF(s => ({ ...s, distanceLegs: s.distanceLegs.filter((_, j) => j !== i) }));
 
   const patchItem = (i, patch) => setF(s => ({ ...s, items: s.items.map((x, j) => j === i ? { ...x, ...patch } : x) }));
-  const addItem = () => setF(s => ({ ...s, items: [...s.items, { pile: '', count: '' }] }));
+  const addItem = () => setF(s => ({ ...s, items: [...s.items, { ...blankPileItem }] }));
   const removeItem = (i) => setF(s => ({ ...s, items: s.items.filter((_, j) => j !== i) }));
 
   const totalKm = f.distanceLegs.reduce((s, l) => s + (Number(l.km) || 0), 0);
 
   const submit = () => {
-    const items = f.workType === 'pile' ? f.items.filter(i => i.pile.trim() && Number(i.count) > 0).map(i => ({ pile: i.pile.trim(), count: Number(i.count) })) : [];
+    const items = f.workType === 'pile' ? f.items.map(i => ({ pile: composePileStr(i), count: Number(i.count) })).filter(i => i.pile && i.count > 0) : [];
     const isOffice = f.workType === 'office' || f.workType === 'office_errand';
     if (!isOffice && !f.site.trim()) return setError('กรุณากรอกชื่อหน่วยงาน');
     if (f.workType === 'pile' && !items.length) return setError('กรุณากรอกชนิดเสาและจำนวนตอกอย่างน้อย 1 รายการ');
@@ -290,7 +309,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         timeIn: lastReport.timeIn, timeOut: lastReport.timeOut, vehicle: lastReport.vehicle,
         distanceLegs: legsFrom(lastReport), tollFee: lastReport.tollFee ? String(lastReport.tollFee) : '',
         note: lastReport.note || '',
-        items: lastReport.items.length ? lastReport.items.map(i => ({ pile: i.pile, count: '' })) : [{ pile: '', count: '' }]
+        items: lastReport.items.length ? lastReport.items.map(i => ({ ...legacyPileItem(i), count: '' })) : [{ ...blankPileItem }]
       }));
     } else {
       setF(blank);
@@ -424,20 +443,58 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
               <div style={{ ...labelStyle, marginBottom: 8 }}>รายการตอกเสาเข็ม</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {f.items.map((it, i) => {
-                  const prevCum = (it.pile && f.site) ? cumFor(reports, f.site, it.pile, f.date, editingReport ? editingReport.id : null) : 0;
+                  const pileStr = composePileStr(it);
+                  const prevCum = (pileStr && f.site) ? cumFor(reports, f.site, pileStr, f.date, editingReport ? editingReport.id : null) : 0;
                   const cnt = Number(it.count) || 0;
-                  const pileShort = it.pile.length > 28 ? it.pile.slice(0, 28) + '…' : it.pile;
+                  const pileShort = pileStr.length > 28 ? pileStr.slice(0, 28) + '…' : pileStr;
+                  const sizeOptions = pileSizesFor(it.shape, it.standard);
+                  const smallBtn = (active) => ({ flex: 1, padding: '8px 6px', borderRadius: 6, border: '2px solid ' + (active ? '#e8762d' : '#4a4f58'), background: active ? '#33291f' : '#2c2f35', color: active ? '#f0b98c' : '#c8c3bb', fontWeight: 700, fontSize: 13, cursor: 'pointer' });
                   return (
                     <div key={i} style={{ background: '#23262b', border: '1px solid #4a4f58', borderRadius: 8, padding: 12 }}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <input type="text" list="pile-list" value={it.pile} onChange={e => patchItem(i, { pile: e.target.value })} placeholder="ชนิดเสา เช่น I-0.22x0.22x22.00ม. 2ท่อนต่อเชื่อม" style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 14 }} />
+                          {it.mode === 'text' ? (
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <input type="text" list="pile-list" value={it.pileText} onChange={e => patchItem(i, { pileText: e.target.value })} placeholder="ชนิดเสา" style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 14, flex: 1 }} />
+                              <button onClick={() => patchItem(i, { ...blankPileItem, count: it.count })} style={{ background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '0 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>เลือกจากรายการ</button>
+                            </div>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => patchItem(i, { shape: 'I', size: '' })} style={smallBtn(it.shape === 'I')}>I (เสารูปตัวไอ)</button>
+                                <button onClick={() => patchItem(i, { shape: 'S', size: '' })} style={smallBtn(it.shape === 'S')}>S (เสาสี่เหลี่ยมตัน)</button>
+                              </div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => patchItem(i, { standard: 'มอก', size: '' })} style={smallBtn(it.standard === 'มอก')}>มอก.</button>
+                                <button onClick={() => patchItem(i, { standard: 'โรงงาน', size: '' })} style={smallBtn(it.standard === 'โรงงาน')}>โรงงาน</button>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <select value={it.size} onChange={e => patchItem(i, { size: e.target.value })} style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 14, flex: 1 }}>
+                                  <option value="">เลือกขนาด</option>
+                                  {sizeOptions.map(sz => <option key={sz} value={sz}>{it.shape}-{sz}</option>)}
+                                  <option value="custom">อื่นๆ/กำหนดเอง</option>
+                                </select>
+                                {it.size === 'custom' && (
+                                  <input type="text" value={it.sizeCustom} onChange={e => patchItem(i, { sizeCustom: e.target.value })} placeholder="ระบุขนาด" style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 14, width: 120, flexShrink: 0 }} />
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <input type="number" min="0" step="0.01" value={it.length} onChange={e => patchItem(i, { length: e.target.value })} placeholder="ความยาว" style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 14, width: 110, textAlign: 'center' }} />
+                                <span style={{ fontSize: 13, color: '#9a958d' }}>เมตร</span>
+                              </div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button onClick={() => patchItem(i, { joint: 'double' })} style={smallBtn(it.joint === 'double')}>2ท่อนต่อเชื่อม</button>
+                                <button onClick={() => patchItem(i, { joint: 'single' })} style={smallBtn(it.joint === 'single')}>ท่อนเดี่ยว</button>
+                              </div>
+                              <input type="text" value={it.extra} onChange={e => patchItem(i, { extra: e.target.value })} placeholder="รายการพิเศษต่อท้าย (ไม่บังคับ) เช่น 4-DB12x3.00ม." style={{ ...inputStyle, background: '#2c2f35', padding: '10px 12px', fontSize: 13 }} />
+                            </>
+                          )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <span style={{ fontSize: 13, color: '#9a958d' }}>จำนวนตอก</span>
                             <input type="number" min="0" value={it.count} onChange={e => patchItem(i, { count: e.target.value })} style={{ background: '#2c2f35', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '10px 12px', fontSize: 16, fontWeight: 700, width: 90, textAlign: 'center' }} />
                             <span style={{ fontSize: 13, color: '#9a958d' }}>ต้น</span>
                           </div>
-                          {!!(it.pile && f.site && cnt > 0) && (
+                          {!!(pileStr && f.site && cnt > 0) && (
                             <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 5, padding: '8px 12px', color: '#f0b98c' }}>
                               ยอดสะสม <b>{pileShort}</b> @ {f.site}: เดิม {num(prevCum)} + วันนี้ {num(cnt)} = <b style={{ fontSize: 15 }}>{num(prevCum + cnt)}</b> ต้น
                             </div>

@@ -26,6 +26,14 @@
     .no-print { display: none !important; }
     html, body { background: #fff !important; }
   }
+  .mobile-label { display: none; }
+  @media (max-width: 640px) {
+    .rg-stack { grid-template-columns: 1fr !important; }
+    .car-header-row { display: none !important; }
+    .car-row { grid-template-columns: 1fr !important; gap: 4px !important; }
+    .car-row > div { text-align: left !important; }
+    .mobile-label { display: inline; color: #9a958d; font-weight: 600; }
+  }
 </style>
 </head>
 <body>
@@ -539,7 +547,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
           ) : (
             <div style={{ ...card, padding: '16px 18px' }}>
               <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>เพิ่มผู้ดูแลใหม่</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+              <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <span style={labelStyle}>ชื่อผู้ดูแล</span>
                   <input type="text" value={aName} onChange={e => { setAName(e.target.value); setAError(''); }} placeholder="เช่น หัวหน้าโอ๋" style={pinInput} autoFocus />
@@ -585,7 +593,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
                 </div>
               ) : (
                 <div style={{ padding: '14px 18px', background: '#23262b' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                  <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <span style={labelStyle}>ชื่อผู้ดูแล</span>
                       <input type="text" value={eName} onChange={e => { setEName(e.target.value); setEError(''); }} style={pinInput} autoFocus />
@@ -674,7 +682,7 @@ function AdminReportsTab({ reports, workers, knownSites, onEdit, onDelete, onPri
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {filtered.map(r => (
-          <div key={r.id} style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
+          <div key={r.id} className="rg-stack" style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
             <div>
               <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{r.worker}</div>
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(r.date)}</div>
@@ -791,7 +799,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
 
       <div style={{ ...card, padding: '16px 18px', marginBottom: 18 }}>
         <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: '#e8762d' }}>{editingNick ? 'แก้ไขพนักงาน: ' + editingNick : 'เพิ่มพนักงานใหม่'}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto auto', gap: 10, alignItems: 'end' }}>
+        <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto auto', gap: 10, alignItems: 'end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={labelStyle}>ชื่อ-นามสกุล</span>
             <input type="text" value={fullName} onChange={e => { setFullName(e.target.value); setError(''); }} placeholder="เช่น นายสมชาย ใจดี" style={inputStyle} />
@@ -918,7 +926,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+      <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
         <div style={{ ...card, padding: '14px 18px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', marginBottom: 10 }}>ค่าสึกหรอต่อวัน (รถส่วนตัว)</div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
@@ -937,16 +945,16 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
       </div>
 
       <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 1fr 1fr 1fr', background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d', gap: 8 }}>
+        <div className="car-header-row" style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 1fr 1fr 1fr', background: '#1b1d21', padding: '10px 18px', fontSize: 13, fontWeight: 700, color: '#9a958d', gap: 8 }}>
           <div>พนักงาน</div><div style={{ textAlign: 'center' }}>ออกสนาม (วัน)</div><div style={{ textAlign: 'right' }}>ค่าสึกหรอ (บาท)</div><div style={{ textAlign: 'right' }}>ค่าออกสนาม (บาท)</div><div style={{ textAlign: 'right' }}>รวม (บาท)</div>
         </div>
         {rows.map(c => (
-          <div key={c.nick} style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 1fr 1fr 1fr', padding: '12px 18px', fontSize: 14, borderBottom: '1px solid #3a3e45', gap: 8, alignItems: 'center' }}>
+          <div key={c.nick} className="car-row" style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 1fr 1fr 1fr', padding: '12px 18px', fontSize: 14, borderBottom: '1px solid #3a3e45', gap: 8, alignItems: 'center' }}>
             <div style={{ fontWeight: 700 }}>{c.nick} <span style={{ color: '#9a958d', fontWeight: 400, fontSize: 12 }}>{c.fullName}</span></div>
-            <div style={{ textAlign: 'center' }}>{c.days}</div>
-            <div style={{ textAlign: 'right' }}>{num(c.wear)}</div>
-            <div style={{ textAlign: 'right' }}>{num(c.field)}</div>
-            <div style={{ textAlign: 'right', fontWeight: 800, color: '#f0b98c', fontSize: 16 }}>{num(c.money)}</div>
+            <div style={{ textAlign: 'center' }}><span className="mobile-label">ออกสนาม: </span>{c.days} <span className="mobile-label">วัน</span></div>
+            <div style={{ textAlign: 'right' }}><span className="mobile-label">ค่าสึกหรอ: </span>{num(c.wear)}</div>
+            <div style={{ textAlign: 'right' }}><span className="mobile-label">ค่าออกสนาม: </span>{num(c.field)}</div>
+            <div style={{ textAlign: 'right', fontWeight: 800, color: '#f0b98c', fontSize: 16 }}><span className="mobile-label">รวม: </span>{num(c.money)}</div>
           </div>
         ))}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', padding: '14px 18px', background: '#1b1d21', alignItems: 'center' }}>

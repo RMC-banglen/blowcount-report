@@ -247,11 +247,11 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <span style={labelStyle}>วันที่</span>
               <input type="date" value={f.date} onChange={e => setF(s => ({ ...s, date: e.target.value }))} style={{ ...inputStyle, minWidth: 0, maxWidth: '100%' }} />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <span style={labelStyle}>หน่วยงาน / ไซต์งาน</span>
               <input type="text" list="site-list" value={f.site} onChange={e => setF(s => ({ ...s, site: e.target.value }))} placeholder="พิมพ์ชื่อหน่วยงาน" style={{ ...inputStyle, minWidth: 0, maxWidth: '100%' }} />
               <datalist id="site-list">{knownSites.map(s => <option key={s} value={s} />)}</datalist>
@@ -301,11 +301,11 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           )}
 
           <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <span style={labelStyle}>เวลาเข้างาน</span>
               <input type="time" value={f.timeIn} onChange={e => setF(s => ({ ...s, timeIn: e.target.value }))} style={{ ...inputStyle, minWidth: 0, maxWidth: '100%' }} />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
               <span style={labelStyle}>เวลาออกงาน</span>
               <input type="time" value={f.timeOut} onChange={e => setF(s => ({ ...s, timeOut: e.target.value }))} style={{ ...inputStyle, minWidth: 0, maxWidth: '100%' }} />
             </label>

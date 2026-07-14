@@ -227,6 +227,10 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   };
 
   const fieldPreviewVal = fieldRate(f.distanceKm) * fieldFactor(f.workType);
+  const sitePiles = f.site.trim()
+    ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
+    : [];
+  const pileSuggestions = sitePiles.length ? sitePiles : knownPiles;
   const myAll = reports.filter(r => r.worker === worker).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const lastReport = myAll.find(r => !editingReport || r.id !== editingReport.id);
   const toggleUseLastReport = (checked) => {
@@ -238,7 +242,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         timeIn: lastReport.timeIn, timeOut: lastReport.timeOut, vehicle: lastReport.vehicle,
         distanceKm: lastReport.distanceKm ? String(lastReport.distanceKm) : '',
         note: lastReport.note || '',
-        items: [{ pile: '', count: '' }]
+        items: lastReport.items.length ? lastReport.items.map(i => ({ pile: i.pile, count: '' })) : [{ pile: '', count: '' }]
       }));
     } else {
       setF(blank);
@@ -323,7 +327,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                   );
                 })}
               </div>
-              <datalist id="pile-list">{knownPiles.map(p => <option key={p} value={p} />)}</datalist>
+              <datalist id="pile-list">{pileSuggestions.map(p => <option key={p} value={p} />)}</datalist>
               <button onClick={addItem} style={{ marginTop: 10, background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '10px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer', width: '100%' }}>+ เพิ่มรายการเสา</button>
             </div>
           )}

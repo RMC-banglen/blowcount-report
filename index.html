@@ -83,6 +83,18 @@ const LEAVE_TYPES = [
   { key: 'personal', label: 'ลากิจ' },
 ];
 function leaveTypeTh(k) { const t = LEAVE_TYPES.find(t => t.key === k); return t ? t.label : k; }
+// if a "sunday" leave is logged on a date that isn't an actual Sunday, explain the swap
+// (assumes the substitute day falls in the same calendar week, which starts on Sunday)
+function sundaySwapNote(leaveType, iso) {
+  if (leaveType !== 'sunday' || !iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const dow = dt.getDay();
+  if (dow === 0) return null;
+  const sun = new Date(y, m - 1, d - dow); // local-time arithmetic only, no UTC conversion
+  const sunIso = sun.getFullYear() + '-' + String(sun.getMonth() + 1).padStart(2, '0') + '-' + String(sun.getDate()).padStart(2, '0');
+  return 'สลับวันหยุดจากวันอาทิตย์ที่ ' + thDate(sunIso) + ' มาเป็นวันนี้ (' + thDate(iso) + ' ' + ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][dow] + ')';
+}
 
 function fieldRate(km) {
   km = Number(km) || 0;
@@ -313,6 +325,11 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                     }}>{lt.label}</button>
                   ))}
                 </div>
+                {!!sundaySwapNote(lf.leaveType, lf.date) && (
+                  <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>
+                    ⚠ {sundaySwapNote(lf.leaveType, lf.date)}
+                  </div>
+                )}
               </div>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={labelStyle}>เหตุผล <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
@@ -331,6 +348,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                   <div key={l.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(l.date)} · {leaveTypeTh(l.leaveType)}</div>
+                      {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 3 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
                       {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {l.reason}</div>}
                     </div>
                     <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>ลบ</button>
@@ -826,6 +844,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
                 </div>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#f0b98c' }}>🏖 {leaveTypeTh(l.leaveType)}</div>
+                  {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 3 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
                   {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {l.reason}</div>}
                 </div>
                 <div />
@@ -1134,8 +1153,8 @@ function AdminLeavesTab({ workers, leaves }) {
   if (monthTo) filtered = filtered.filter(l => l.date <= monthTo);
 
   const exportLeavesCsv = () => {
-    const rows = [['วันที่', 'พนักงาน', 'ประเภท', 'เหตุผล']];
-    for (const l of filtered) rows.push([l.date, l.worker, leaveTypeTh(l.leaveType), l.reason || '']);
+    const rows = [['วันที่', 'พนักงาน', 'ประเภท', 'หมายเหตุการสลับวันหยุด', 'เหตุผล']];
+    for (const l of filtered) rows.push([l.date, l.worker, leaveTypeTh(l.leaveType), sundaySwapNote(l.leaveType, l.date) || '', l.reason || '']);
     const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -1176,6 +1195,7 @@ function AdminLeavesTab({ workers, leaves }) {
             <div style={{ fontWeight: 800, fontSize: 14, color: '#e8762d' }}>{l.worker}</div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{leaveTypeTh(l.leaveType)}</div>
+              {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 2 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
               {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 2, fontStyle: 'italic' }}>📝 {l.reason}</div>}
             </div>
           </div>

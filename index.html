@@ -1383,9 +1383,11 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
             <div style={{ textAlign: 'right' }}><span className="mobile-label">รวมค่าทางด่วน: </span>{num(c.toll)}</div>
           </div>
         ))}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', padding: '14px 18px', background: '#1b1d21', alignItems: 'center' }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>รวมทั้งหมด</div>
-          <div style={{ fontWeight: 800, fontSize: 20, color: '#e8762d' }}>{num(grandTotal)} บาท</div>
+        <div className="car-row" style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.9fr 0.9fr 0.9fr 0.9fr', padding: '14px 18px', background: '#1b1d21', gap: 8, alignItems: 'center' }}>
+          <div style={{ fontWeight: 800, fontSize: 15, gridColumn: 'span 3' }}>รวมทั้งหมด <span style={{ fontWeight: 400, fontSize: 12, color: '#9a958d' }}>(ไม่รวมค่าทางด่วน)</span></div>
+          <div />
+          <div style={{ textAlign: 'right', fontWeight: 800, fontSize: 20, color: '#e8762d' }}><span className="mobile-label">รวมทั้งหมด: </span>{num(grandTotal)} บาท</div>
+          <div style={{ textAlign: 'right', fontWeight: 700, color: '#9a958d' }}><span className="mobile-label">รวมค่าทางด่วน: </span>{num(rows.reduce((a, c) => a + c.toll, 0))}</div>
         </div>
       </div>
     </div>

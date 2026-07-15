@@ -122,6 +122,12 @@ function thDate(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return d + ' ' + MONTHS_TH_SHORT[m - 1] + ' ' + (y + 543);
 }
+// local-time "today", not UTC — toISOString() rolls over at 7:00 Thailand time (UTC+7), not midnight
+function todayLocalIso() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function todayLocalMonth() { return todayLocalIso().slice(0, 7); }
 
 
 // cumulative count for site+pile, over reports up to (and optionally excluding) a report id
@@ -226,7 +232,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, a
 
 function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave, monthLocks }) {
   const [mode, setMode] = useState('report');
-  const blank = { date: new Date().toISOString().slice(0, 10), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
+  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
@@ -237,10 +243,10 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   } : blank);
   const [error, setError] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
-  const [historyMonth, setHistoryMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [historyMonth, setHistoryMonth] = useState(todayLocalMonth());
   const [useLastReport, setUseLastReport] = useState(false);
 
-  const blankLeave = { date: new Date().toISOString().slice(0, 10), leaveType: 'sunday', reason: '' };
+  const blankLeave = { date: todayLocalIso(), leaveType: 'sunday', reason: '' };
   const [lf, setLf] = useState(blankLeave);
   const [leaveError, setLeaveError] = useState('');
   const [leaveSavedFlash, setLeaveSavedFlash] = useState(false);
@@ -1003,12 +1009,12 @@ function monthLockState(month, monthLocks) {
   const ny = m === 12 ? y + 1 : y;
   const nm = m === 12 ? 1 : m + 1;
   const cutoff = ny + '-' + String(nm).padStart(2, '0') + '-10';
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayLocalIso();
   return todayIso <= cutoff ? 'grace' : 'frozen';
 }
 
 function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, monthLocks, canConfirmMonth, onLockMonth }) {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayLocalIso();
   const currentMonth = todayIso.slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
   const [filterSite, setFilterSite] = useState('');
@@ -1281,7 +1287,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
 }
 
 function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(todayLocalMonth());
   const monReports = reports.filter(r => r.date.slice(0, 7) === month);
   const rows = workers.map(w => {
     const mine = monReports.filter(r => r.worker === w.nick);
@@ -1342,7 +1348,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
 }
 
 function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(todayLocalMonth());
   const monthReports = reports.filter(r => r.date.slice(0, 7) === month);
   const rows = workers.map(w => {
     const byDate = {};
@@ -1413,7 +1419,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
 }
 
 function AdminLeavesTab({ workers, leaves, onDelete }) {
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = todayLocalMonth();
   const [filterWorker, setFilterWorker] = useState('');
   const [filterMonth, setFilterMonth] = useState(currentMonth);
 
@@ -1490,7 +1496,7 @@ function PrintReportsView({ rows, subtitle, onClose }) {
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
         <div style={{ borderBottom: '3px solid #e8762d', paddingBottom: 12, marginBottom: 18 }}>
           <div style={{ fontSize: 22, fontWeight: 800 }}>รายงานการตอกเสาเข็ม</div>
-          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{subtitle} · พิมพ์เมื่อ {thDate(new Date().toISOString().slice(0, 10))}</div>
+          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{subtitle} · พิมพ์เมื่อ {thDate(todayLocalIso())}</div>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
@@ -1535,7 +1541,7 @@ function PrintMonthlyView({ rows, monthTh, onClose }) {
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
         <div style={{ borderBottom: '3px solid #e8762d', paddingBottom: 12, marginBottom: 18 }}>
           <div style={{ fontSize: 22, fontWeight: 800 }}>สรุปรายเดือนต่อพนักงาน</div>
-          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>เดือน {monthTh} · พิมพ์เมื่อ {thDate(new Date().toISOString().slice(0, 10))}</div>
+          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>เดือน {monthTh} · พิมพ์เมื่อ {thDate(todayLocalIso())}</div>
         </div>
         {rows.map(m => (
           <div key={m.nick} style={{ marginBottom: 16, breakInside: 'avoid' }}>
@@ -1570,7 +1576,7 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
         <div style={{ borderBottom: '3px solid #e8762d', paddingBottom: 12, marginBottom: 18 }}>
           <div style={{ fontSize: 22, fontWeight: 800 }}>สรุปค่ารถออกสนาม</div>
-          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>เดือน {monthTh} · พิมพ์เมื่อ {thDate(new Date().toISOString().slice(0, 10))}</div>
+          <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>เดือน {monthTh} · พิมพ์เมื่อ {thDate(todayLocalIso())}</div>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>

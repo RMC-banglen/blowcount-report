@@ -106,6 +106,13 @@ function fieldRate(km) {
 }
 function fieldFactor(workType) { return workType === 'clear' ? 0.5 : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
 function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile'); }
+// money difference from a company distance correction (original -> current), using the
+// same tiered rate for both sides so it's an accurate delta, not a linear approximation
+function distanceCorrectionMoney(r) {
+  if (r.originalDistanceKm == null || Number(r.originalDistanceKm) === Number(r.distanceKm)) return 0;
+  const factor = fieldFactor(r.workType || 'pile');
+  return (fieldRate(r.distanceKm) - fieldRate(r.originalDistanceKm)) * factor;
+}
 function wearRate(vehicle, rates, workType) { return workType === 'office' ? 0 : vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
 function vehicleTh(k) { const v = VEHICLES.find(v => v.key === k); return v ? v.label : k; }
 function num(n) { return (Number(n) || 0).toLocaleString('th-TH'); }
@@ -615,6 +622,14 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                     <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
                     <div style={{ fontSize: 12, color: '#9a958d', marginTop: 3 }}>{r.timeIn}–{r.timeOut} น. · {vehicleTh(r.vehicle)}</div>
                     {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {r.note}</div>}
+                    {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (() => {
+                      const diff = distanceCorrectionMoney(r);
+                      return (
+                        <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 4, background: '#1b1d21', borderRadius: 5, padding: '6px 10px' }}>
+                          ⚠ บริษัทปรับแก้ระยะทางจาก {num(r.originalDistanceKm)} เป็น {num(r.distanceKm)} กม. ({diff >= 0 ? '+' : ''}{num(diff)} บาท)
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
                     {editable ? (
@@ -1116,6 +1131,9 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
               {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : 'ไปหน้างานแต่ไม่ได้ตอก'}</div>}
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 6 }}>เข้า {r.timeIn} · ออก {r.timeOut} · {vehicleTh(r.vehicle)} · {r.distanceLegs && r.distanceLegs.length > 1 ? r.distanceLegs.map(l => l.km).join('+') + '=' + num(r.distanceKm) + ' กม.' : (r.distanceKm ? num(r.distanceKm) + ' กม.' : '-')}{!!r.tollFee && <> · ค่าทางด่วน {num(r.tollFee)} บาท</>}</div>
               {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {r.note}</div>}
+              {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (
+                <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 4 }}>⚠ ปรับแก้ระยะทางจาก {num(r.originalDistanceKm)} เป็น {num(r.distanceKm)} กม. ({distanceCorrectionMoney(r) >= 0 ? '+' : ''}{num(distanceCorrectionMoney(r))} บาท)</div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {canEditReport(r) ? (
@@ -1625,6 +1643,7 @@ function App() {
   const [adminAuthed, setAdminAuthed] = useState(sessionStorage.getItem('field_admin_authed') === '1');
   const [adminName, setAdminName] = useState(sessionStorage.getItem('field_admin_name') || '');
   const [editingReport, setEditingReport] = useState(null);
+  const [editingAsAdmin, setEditingAsAdmin] = useState(false);
   const [printPayload, setPrintPayload] = useState(null); // { kind, ...data }
 
   const load = useCallback(async () => {
@@ -1647,6 +1666,8 @@ function App() {
         id: r.id, worker: r.worker_nick, date: r.date, site: r.site, items: r.items || [],
         timeIn: r.time_in, timeOut: r.time_out, vehicle: r.vehicle, distanceKm: Number(r.distance_km) || 0,
         distanceLegs: r.distance_legs || [], tollFee: Number(r.toll_fee) || 0,
+        originalDistanceKm: r.original_distance_km != null ? Number(r.original_distance_km) : null,
+        originalDistanceLegs: r.original_distance_legs || null,
         workType: r.work_type, note: r.note || ''
       })));
       setLeaves((lRes.data || []).map(l => ({ id: l.id, worker: l.worker_nick, date: l.date, leaveType: l.leave_type, reason: l.reason || '' })));
@@ -1694,15 +1715,26 @@ function App() {
   const workerRec = workers.find(w => w.nick === worker);
 
   const saveReport = async (report) => {
+    const prev = reports.find(r => r.id === report.id);
+    let originalDistanceKm = prev ? prev.originalDistanceKm : null;
+    let originalDistanceLegs = prev ? prev.originalDistanceLegs : null;
+    // only an admin correcting the distance starts a correction trail — a worker
+    // fixing their own report within their own edit window is not a "correction"
+    if (editingAsAdmin && prev && prev.originalDistanceKm == null && Number(prev.distanceKm) !== Number(report.distanceKm)) {
+      originalDistanceKm = prev.distanceKm;
+      originalDistanceLegs = prev.distanceLegs;
+    }
     const row = {
       id: report.id, worker_nick: report.worker, date: report.date, site: report.site, items: report.items,
       time_in: report.timeIn, time_out: report.timeOut, vehicle: report.vehicle,
       distance_km: report.distanceKm, distance_legs: report.distanceLegs || [], toll_fee: report.tollFee || 0,
+      original_distance_km: originalDistanceKm, original_distance_legs: originalDistanceLegs,
       work_type: report.workType, note: report.note
     };
     const { error } = await DB.from('field_reports').upsert(row);
     if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
     setEditingReport(null);
+    setEditingAsAdmin(false);
     await load();
   };
   const deleteReport = async (id) => {
@@ -1834,8 +1866,8 @@ function App() {
         <WorkerFormView
           worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : worker}
           reports={reports} rates={rates} knownSites={knownSites} knownPiles={knownPiles}
-          editingReport={editingReport} onCancelEdit={() => setEditingReport(null)}
-          onSave={saveReport} onDelete={deleteReport} onEdit={setEditingReport}
+          editingReport={editingReport} onCancelEdit={() => { setEditingReport(null); setEditingAsAdmin(false); }}
+          onSave={saveReport} onDelete={deleteReport} onEdit={r => { setEditingReport(r); setEditingAsAdmin(false); }}
           leaves={leaves} onSaveLeave={saveLeave} onDeleteLeave={deleteLeave}
           monthLocks={monthLocks}
         />
@@ -1847,7 +1879,7 @@ function App() {
 
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
-          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} />}
+          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} />}
           {effectiveTab === 'piles' && <AdminPilesTab reports={reports} />}
           {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}

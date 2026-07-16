@@ -1036,6 +1036,12 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
   if (monthFrom) filtered = filtered.filter(r => r.date >= monthFrom);
   if (monthTo) filtered = filtered.filter(r => r.date <= monthTo);
 
+  // leaves don't have a site, so a site filter excludes them (matches the on-screen list below)
+  let filteredLeaves = filterSite ? [] : leaves.slice();
+  if (filterWorker) filteredLeaves = filteredLeaves.filter(l => l.worker === filterWorker);
+  if (monthFrom) filteredLeaves = filteredLeaves.filter(l => l.date >= monthFrom);
+  if (monthTo) filteredLeaves = filteredLeaves.filter(l => l.date <= monthTo);
+
   // reports merged with leave/holiday entries for the on-screen list, so admins can see
   // at a glance whether a worker was off instead of just missing from the reports
   let displayItems = [
@@ -1072,7 +1078,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
             })}
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
-          <button onClick={() => onExportCsv(filtered)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export CSV</button>
+          <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export CSV</button>
           <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
@@ -1617,15 +1623,22 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
   );
 }
 
-function exportCsv(filtered, reports) {
+function exportCsv(filtered, reports, rates, leaves = []) {
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ']];
   const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
+  const dataRows = [];
   for (const r of filtered) {
     const base = [r.date, r.worker, r.site, wtTh(r.workType)];
-    const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), r.distanceKm || '', 0, fieldMoney(r), Number(r.tollFee) || 0, r.note || ''];
-    if (r.items.length) for (const it of r.items) rows.push([...base, it.pile, it.count, cumFor(reports, r.site, it.pile, r.date, null), ...tail]);
-    else rows.push([...base, '', '', '', ...tail]);
+    const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), r.distanceKm || '', wearRate(r.vehicle, rates, r.workType), fieldMoney(r), Number(r.tollFee) || 0, r.note || ''];
+    if (r.items.length) for (const it of r.items) dataRows.push({ date: r.date, sortId: r.id, row: [...base, it.pile, it.count, cumFor(reports, r.site, it.pile, r.date, null), ...tail] });
+    else dataRows.push({ date: r.date, sortId: r.id, row: [...base, '', '', '', ...tail] });
   }
+  for (const l of leaves) {
+    const note = [sundaySwapNote(l.leaveType, l.date), l.reason].filter(Boolean).join(' / ');
+    dataRows.push({ date: l.date, sortId: l.id, row: [l.date, l.worker, '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', 0, 0, 0, note] });
+  }
+  dataRows.sort((a, b) => b.date.localeCompare(a.date) || b.sortId - a.sortId);
+  for (const d of dataRows) rows.push(d.row);
   const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -1833,7 +1846,7 @@ function App() {
     return ok;
   };
 
-  const doExportCsv = (filtered) => exportCsv(filtered, reports);
+  const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves);
 
   const openPrintReports = (filtered, filters) => {
     const rows = filtered.flatMap(r => {

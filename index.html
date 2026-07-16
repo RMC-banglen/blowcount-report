@@ -1020,7 +1020,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
   const [filterWorker, setFilterWorker] = useState('');
   const [filterSite, setFilterSite] = useState('');
   const [filterMonth, setFilterMonth] = useState(currentMonth);
-  const [includeCost, setIncludeCost] = useState(true);
+  const [includeCost, setIncludeCost] = useState(false);
 
   const reportMonths = [...new Set(reports.map(r => r.date.slice(0, 7)))];
   const monthOptions = [...new Set([currentMonth, ...reportMonths])].sort().reverse();
@@ -1081,11 +1081,11 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
           <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
+          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', padding: '0 4px' }}>
             <input type="checkbox" checked={includeCost} onChange={e => setIncludeCost(e.target.checked)} style={{ width: 16, height: 16 }} />
             รวมค่ารถ
           </label>
-          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
 

@@ -1084,7 +1084,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
           <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', padding: '0 4px' }}>
             <input type="checkbox" checked={includeCost} onChange={e => setIncludeCost(e.target.checked)} style={{ width: 16, height: 16 }} />
-            รวมค่ารถ
+            พิมพ์ PDF รวมค่ารถ
           </label>
         </div>
       </div>

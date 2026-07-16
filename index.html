@@ -1512,6 +1512,10 @@ function PrintReportsView({ rows, subtitle, totals, onClose }) {
               <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>สะสม</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'center' }}>เวลา</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'left' }}>รถ / ระยะทาง</th>
+              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าสึกหรอ</th>
+              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าออกสนาม</th>
+              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>รวม</th>
+              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าทางด่วน</th>
             </tr>
           </thead>
           <tbody>
@@ -1525,6 +1529,10 @@ function PrintReportsView({ rows, subtitle, totals, onClose }) {
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{p.cum}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>{p.time}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.vehicle}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.wear)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.field)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{num(p.money)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.toll)}</td>
               </tr>
             ))}
           </tbody>
@@ -1883,7 +1891,8 @@ function App() {
 
   const openPrintReports = (filtered, filters) => {
     const rows = filtered.flatMap(r => {
-      const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : '') + (r.tollFee ? ' / ทางด่วน ' + num(r.tollFee) + ' บ.' : '') };
+      const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
+      const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
       if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-' }];
       return r.items.map(it => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)) }));
     });

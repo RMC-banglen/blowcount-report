@@ -1069,7 +1069,7 @@ function DistanceConfirmCell({ report, disabled, onConfirm }) {
   if (report.workType === 'office') return <div style={{ fontSize: 12, color: '#9a958d' }}>-</div>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-      <span style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }}>ยืนยันระยะทาง</span>
+      <span style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }}>แก้ระยะทาง</span>
       <input type="number" min="0" value={val} disabled={disabled} onChange={e => setVal(e.target.value)} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 5, padding: '6px 8px', fontSize: 13, width: 80, textAlign: 'center' }} />
       <button onClick={confirm} disabled={disabled || !changed || saving} style={{
         background: changed && !disabled ? '#e8762d' : 'none', border: '1px solid ' + (changed && !disabled ? '#e8762d' : '#4a4f58'),

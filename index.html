@@ -1056,7 +1056,31 @@ function monthLockState(month, monthLocks) {
   return todayIso <= cutoff ? 'grace' : 'frozen';
 }
 
-function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, monthLocks, canConfirmMonth, onLockMonth }) {
+function DistanceConfirmCell({ report, disabled, onConfirm }) {
+  const [val, setVal] = useState(report.distanceKm ? String(report.distanceKm) : '');
+  const [saving, setSaving] = useState(false);
+  const changed = Number(val || 0) !== Number(report.distanceKm || 0);
+  const confirm = async () => {
+    if (!changed || disabled || saving) return;
+    setSaving(true);
+    await onConfirm(report, Number(val) || 0);
+    setSaving(false);
+  };
+  if (report.workType === 'office') return <div style={{ fontSize: 12, color: '#9a958d' }}>-</div>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+      <span style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }}>ยืนยันระยะทาง</span>
+      <input type="number" min="0" value={val} disabled={disabled} onChange={e => setVal(e.target.value)} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 5, padding: '6px 8px', fontSize: 13, width: 80, textAlign: 'center' }} />
+      <button onClick={confirm} disabled={disabled || !changed || saving} style={{
+        background: changed && !disabled ? '#e8762d' : 'none', border: '1px solid ' + (changed && !disabled ? '#e8762d' : '#4a4f58'),
+        color: changed && !disabled ? '#1b1d21' : '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12,
+        cursor: changed && !disabled ? 'pointer' : 'default', opacity: saving ? 0.6 : 1, width: 80
+      }}>{saving ? '...' : 'ยืนยัน'}</button>
+    </div>
+  );
+}
+
+function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, monthLocks, canConfirmMonth, onLockMonth, onConfirmDistance }) {
   const todayIso = todayLocalIso();
   const currentMonth = todayIso.slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
@@ -1159,7 +1183,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
           if (item.kind === 'leave') {
             const l = item.leave;
             return (
-              <div key={'l-' + l.id} className="rg-stack" style={{ ...card, borderLeft: '4px solid #f0b98c', padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
+              <div key={'l-' + l.id} className="rg-stack" style={{ ...card, borderLeft: '4px solid #f0b98c', padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto 130px', gap: 14, alignItems: 'start' }}>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{l.worker}</div>
                   <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(l.date)}</div>
@@ -1170,12 +1194,13 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
                   {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {l.reason}</div>}
                 </div>
                 <div />
+                <div />
               </div>
             );
           }
           const r = item.report;
           return (
-          <div key={'r-' + r.id} className="rg-stack" style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 14, alignItems: 'start' }}>
+          <div key={'r-' + r.id} className="rg-stack" style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto 130px', gap: 14, alignItems: 'start' }}>
             <div>
               <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{r.worker}</div>
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(r.date)}</div>
@@ -1205,6 +1230,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
                 <div style={{ fontSize: 11, color: '#9a958d', whiteSpace: 'nowrap' }} title="เดือนนี้ถูกยืนยันข้อมูลแล้ว">🔒 ยืนยันแล้ว</div>
               )}
             </div>
+            <DistanceConfirmCell report={r} disabled={!canEditReport(r)} onConfirm={onConfirmDistance} />
           </div>
           );
         })}
@@ -1848,6 +1874,26 @@ function App() {
     setEditingAsAdmin(false);
     await load();
   };
+  // quick inline distance correction from รายงานรวม, without opening the full edit form —
+  // same admin-correction snapshot rule as saveReport, collapsed to a single leg
+  const confirmDistance = async (report, newKm) => {
+    let originalDistanceKm = report.originalDistanceKm;
+    let originalDistanceLegs = report.originalDistanceLegs;
+    if (report.originalDistanceKm == null && Number(report.distanceKm) !== Number(newKm)) {
+      originalDistanceKm = report.distanceKm;
+      originalDistanceLegs = report.distanceLegs;
+    }
+    const row = {
+      id: report.id, worker_nick: report.worker, date: report.date, site: report.site, items: report.items,
+      time_in: report.timeIn, time_out: report.timeOut, vehicle: report.vehicle,
+      distance_km: newKm, distance_legs: [{ km: newKm, note: '' }], toll_fee: report.tollFee || 0,
+      original_distance_km: originalDistanceKm, original_distance_legs: originalDistanceLegs,
+      work_type: report.workType, note: report.note
+    };
+    const { error } = await DB.from('field_reports').upsert(row);
+    if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+    await load();
+  };
   const deleteReport = async (id) => {
     const { error } = await DB.from('field_reports').delete().eq('id', id);
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
@@ -1996,7 +2042,7 @@ function App() {
 
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
-          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} />}
+          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} onConfirmDistance={confirmDistance} />}
           {effectiveTab === 'piles' && <AdminPilesTab reports={reports} />}
           {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}

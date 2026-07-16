@@ -251,11 +251,21 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const [lf, setLf] = useState(blankLeave);
   const [leaveError, setLeaveError] = useState('');
   const [leaveSavedFlash, setLeaveSavedFlash] = useState(false);
+  const [editingLeave, setEditingLeave] = useState(null);
   const myLeaves = leaves.filter(l => l.worker === worker).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const startEditLeave = (l) => {
+    setEditingLeave(l);
+    setLf({ date: l.date, leaveType: l.leaveType, reason: l.reason || '' });
+    setMode('leave');
+    setLeaveError('');
+    window.scrollTo(0, 0);
+  };
+  const cancelEditLeave = () => { setEditingLeave(null); setLf(blankLeave); setLeaveError(''); };
   const submitLeave = () => {
     if (!lf.date) return setLeaveError('กรุณาเลือกวันที่');
-    onSaveLeave({ id: Date.now(), worker, date: lf.date, leaveType: lf.leaveType, reason: lf.reason.trim() });
+    onSaveLeave({ id: editingLeave ? editingLeave.id : Date.now(), worker, date: lf.date, leaveType: lf.leaveType, reason: lf.reason.trim() });
     setLeaveError(''); setLeaveSavedFlash(true);
+    setEditingLeave(null);
     setLf(blankLeave);
     setTimeout(() => setLeaveSavedFlash(false), 3000);
   };
@@ -358,9 +368,12 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         <div>
           {leaveSavedFlash && <div style={{ background: '#2c4a2a', border: '1px solid #6dbf5b', color: '#b9e6ae', borderRadius: 8, padding: '14px 18px', marginBottom: 20, fontWeight: 600, fontSize: 15 }}>✓ บันทึกวันหยุด/ลาเรียบร้อยแล้ว</div>}
           <div style={{ ...card, overflow: 'hidden' }}>
-            <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d' }}>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>แจ้งวันหยุด / ลา</div>
-              <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>ผู้แจ้ง: <span style={{ color: '#e8762d', fontWeight: 700 }}>{workerFull}</span></div>
+            <div style={{ background: '#1b1d21', padding: '16px 20px', borderBottom: '2px solid #e8762d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{editingLeave ? 'แก้ไขวันหยุด / ลา' : 'แจ้งวันหยุด / ลา'}</div>
+                <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>ผู้แจ้ง: <span style={{ color: '#e8762d', fontWeight: 700 }}>{workerFull}</span></div>
+              </div>
+              {editingLeave && <button onClick={cancelEditLeave} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}>ยกเลิกการแก้ไข</button>}
             </div>
             <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -389,7 +402,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                 <textarea value={lf.reason} onChange={e => setLf(s => ({ ...s, reason: e.target.value }))} rows="2" placeholder="ระบุเหตุผลเพิ่มเติม (ถ้ามี)" style={{ ...inputStyle, resize: 'vertical' }} />
               </label>
               {!!leaveError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{leaveError}</div>}
-              <button onClick={submitLeave} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: 'pointer' }}>บันทึกวันหยุด/ลา</button>
+              <button onClick={submitLeave} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: 'pointer' }}>{editingLeave ? 'บันทึกการแก้ไข' : 'บันทึกวันหยุด/ลา'}</button>
             </div>
           </div>
 
@@ -404,7 +417,10 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                       {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 3 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
                       {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {l.reason}</div>}
                     </div>
-                    <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>ลบ</button>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => startEditLeave(l)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+                      <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -637,7 +653,10 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                       {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 3 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
                       {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {l.reason}</div>}
                     </div>
-                    <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>ลบ</button>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => startEditLeave(l)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+                      <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+                    </div>
                   </div>
                 );
               }

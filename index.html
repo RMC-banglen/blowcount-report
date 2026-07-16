@@ -1168,10 +1168,10 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
 function AdminPilesTab({ reports }) {
   const bySite = {};
   for (const r of reports) {
-    const site = r.site.trim() || '(ไม่ระบุ)';
-    bySite[site] = bySite[site] || {};
     for (const it of r.items) {
       const p = it.pile.trim(); if (!p) continue;
+      const site = r.site.trim() || '(ไม่ระบุ)';
+      bySite[site] = bySite[site] || {};
       bySite[site][p] = (bySite[site][p] || 0) + (Number(it.count) || 0);
     }
   }

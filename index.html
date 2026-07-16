@@ -263,6 +263,8 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const cancelEditLeave = () => { setEditingLeave(null); setLf(blankLeave); setLeaveError(''); };
   const submitLeave = () => {
     if (!lf.date) return setLeaveError('กรุณาเลือกวันที่');
+    const dup = myLeaves.some(l => l.date === lf.date && (!editingLeave || l.id !== editingLeave.id));
+    if (dup) return setLeaveError('วันที่นี้มีรายการวันหยุด/ลาบันทึกไว้แล้ว กรุณาแก้ไขรายการเดิมแทนการบันทึกใหม่');
     onSaveLeave({ id: editingLeave ? editingLeave.id : Date.now(), worker, date: lf.date, leaveType: lf.leaveType, reason: lf.reason.trim() });
     setLeaveError(''); setLeaveSavedFlash(true);
     setEditingLeave(null);

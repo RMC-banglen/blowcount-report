@@ -424,7 +424,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           {!editingReport && lastReport && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
               <input type="checkbox" checked={useLastReport} onChange={e => toggleUseLastReport(e.target.checked)} style={{ width: 18, height: 18, flexShrink: 0 }} />
-              <span style={{ fontSize: 14, color: '#e9e6e1' }}>ใช้ข้อมูลเดียวกับรายงานล่าสุด ({thDate(lastReport.date)} · {lastReport.site}) <span style={{ color: '#9a958d' }}>— ยกเว้นรายการเสา/จำนวน ให้กรอกใหม่</span></span>
+              <span style={{ fontSize: 14, color: '#e9e6e1' }}>ใช้ข้อมูลเดียวกับรายงานล่าสุด ({thDate(lastReport.date)} · {lastReport.site}) <span style={{ color: '#9a958d' }}>— คัดลอกชนิดเสามาให้ เหลือแค่กรอกจำนวนใหม่</span></span>
             </label>
           )}
           <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>

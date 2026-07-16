@@ -328,7 +328,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
       setF(blank);
     }
   };
-  const myMonths = [...new Set(myAll.map(r => r.date.slice(0, 7)))].sort().reverse();
+  const myMonths = [...new Set([...myAll.map(r => r.date.slice(0, 7)), ...myLeaves.map(l => l.date.slice(0, 7))])].sort().reverse();
   const mine = myAll.filter(r => r.date.slice(0, 7) === historyMonth);
   const myByDate = {};
   for (const r of mine) if (!myByDate[r.date]) myByDate[r.date] = r;
@@ -337,6 +337,11 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const myField = Object.values(myByDate).reduce((sum, r) => sum + fieldMoney(r), 0);
   const myWear = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType), 0);
   const myMoney = myField + myWear;
+  const myLeavesInMonth = myLeaves.filter(l => l.date.slice(0, 7) === historyMonth);
+  const historyItems = [
+    ...mine.map(r => ({ kind: 'report', date: r.date, sortId: r.id, report: r })),
+    ...myLeavesInMonth.map(l => ({ kind: 'leave', date: l.date, sortId: l.id, leave: l })),
+  ].sort((a, b) => b.date.localeCompare(a.date) || b.sortId - a.sortId);
   const [hy, hm] = historyMonth.split('-').map(Number);
   const historyMonthTh = MONTHS_TH[hm - 1] + ' ' + (hy + 543);
 
@@ -596,7 +601,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         </div>
       </div>
 
-      {myAll.length > 0 && (
+      {(myAll.length > 0 || myLeaves.length > 0) && (
         <div style={{ marginTop: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: '#c8c3bb' }}>ประวัติรายงานของฉัน</div>
@@ -618,10 +623,25 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
             <span>รวมทั้งหมด <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(myMoney)}</b> บาท</span>
           </div>
 
-          {mine.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '30px 20px', textAlign: 'center', color: '#9a958d', fontSize: 14 }}>ไม่มีรายงานในเดือนนี้</div>}
+          {historyItems.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '30px 20px', textAlign: 'center', color: '#9a958d', fontSize: 14 }}>ไม่มีรายงานในเดือนนี้</div>}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {mine.map(r => {
+            {historyItems.map(item => {
+              if (item.kind === 'leave') {
+                const l = item.leave;
+                return (
+                  <div key={'l-' + l.id} style={{ ...card, borderLeft: '4px solid #f0b98c', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(l.date)}</div>
+                      <div style={{ fontSize: 13, color: '#f0b98c', fontWeight: 700, marginTop: 3 }}>🏖 {leaveTypeTh(l.leaveType)}</div>
+                      {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 3 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}
+                      {!!l.reason && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {l.reason}</div>}
+                    </div>
+                    <button onClick={() => { if (confirm('ลบรายการนี้?')) onDeleteLeave(l.id); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '5px 9px', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>ลบ</button>
+                  </div>
+                );
+              }
+              const r = item.report;
               const editable = monthLockState(r.date.slice(0, 7), monthLocks) === 'open';
               return (
                 <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>

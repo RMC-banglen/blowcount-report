@@ -1489,7 +1489,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
   );
 }
 
-function PrintReportsView({ rows, subtitle, onClose }) {
+function PrintReportsView({ rows, subtitle, totals, onClose }) {
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', color: '#1a1a1a' }}>
       <div className="no-print" style={{ maxWidth: 900, margin: '0 auto', padding: '16px 24px 0', display: 'flex', gap: 10 }}>
@@ -1529,6 +1529,26 @@ function PrintReportsView({ rows, subtitle, onClose }) {
             ))}
           </tbody>
         </table>
+        {!!totals && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 20 }}>
+            <thead>
+              <tr style={{ background: '#f0ede9' }}>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าสึกหรอ (บาท)</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าออกสนาม (บาท)</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>รวม (บาท)</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>รวมค่าทางด่วน (บาท)<br /><span style={{ fontWeight: 400, fontSize: 11, color: '#777' }}>(จ่ายผ่านบัตรบริษัท)</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.wear)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.field)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>{num(totals.money)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.toll)}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
@@ -1870,7 +1890,12 @@ function App() {
     const subtitle = [filters.filterWorker && ('พนักงาน: ' + filters.filterWorker), filters.filterSite && ('หน่วยงาน: ' + filters.filterSite),
       (filters.filterDateFrom || filters.filterDateTo) && ('วันที่ ' + (filters.filterDateFrom ? thDate(filters.filterDateFrom) : '...') + ' ถึง ' + (filters.filterDateTo ? thDate(filters.filterDateTo) : '...'))]
       .filter(Boolean).join(' · ') || ('ทั้งหมด ' + filtered.length + ' รายการ');
-    setPrintPayload({ kind: 'reports', rows, subtitle });
+    // one report per worker+date counted toward the money totals (a worker only submits once per day)
+    const byWorkerDate = {};
+    for (const r of filtered) { const k = r.worker + '|' + r.date; if (!byWorkerDate[k]) byWorkerDate[k] = r; }
+    let wear = 0, field = 0, toll = 0;
+    for (const k of Object.keys(byWorkerDate)) { wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType); field += fieldMoney(byWorkerDate[k]); toll += Number(byWorkerDate[k].tollFee) || 0; }
+    setPrintPayload({ kind: 'reports', rows, subtitle, totals: { wear, field, toll, money: wear + field } });
   };
   const openPrintMonthly = (rows, monthTh) => setPrintPayload({ kind: 'monthly', rows: rows.map(r => ({ ...r, total: r.total })), monthTh });
   const openPrintCar = (rows, grandTotal, monthTh) => setPrintPayload({ kind: 'car', rows, grandTotal, monthTh });
@@ -1879,7 +1904,7 @@ function App() {
   if (loadError) return <div style={{ padding: 40, color: '#f0b3a8' }}>{loadError}</div>;
 
   if (printPayload) {
-    if (printPayload.kind === 'reports') return <PrintReportsView rows={printPayload.rows} subtitle={printPayload.subtitle} onClose={() => setPrintPayload(null)} />;
+    if (printPayload.kind === 'reports') return <PrintReportsView rows={printPayload.rows} subtitle={printPayload.subtitle} totals={printPayload.totals} onClose={() => setPrintPayload(null)} />;
     if (printPayload.kind === 'monthly') return <PrintMonthlyView rows={printPayload.rows} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
     if (printPayload.kind === 'car') return <PrintCarView rows={printPayload.rows} grandTotal={printPayload.grandTotal} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
   }

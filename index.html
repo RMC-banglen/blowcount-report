@@ -50,6 +50,7 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script>
 // Dedicated Supabase project for this feature (separate from index.html's project).
@@ -1078,7 +1079,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
             })}
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
-          <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export CSV</button>
+          <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
           <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
@@ -1441,11 +1442,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
   const exportLeavesCsv = () => {
     const rows = [['วันที่', 'พนักงาน', 'ประเภท', 'หมายเหตุการสลับวันหยุด', 'เหตุผล']];
     for (const l of filtered) rows.push([l.date, l.worker, leaveTypeTh(l.leaveType), sundaySwapNote(l.leaveType, l.date) || '', l.reason || '']);
-    const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'วันหยุดพนักงาน.csv';
-    a.click();
+    downloadXlsx(rows, 'วันหยุดพนักงาน.xlsx', 'วันหยุด');
   };
 
   return (
@@ -1468,7 +1465,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
             })}
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
-          <button onClick={exportLeavesCsv} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export CSV</button>
+          <button onClick={exportLeavesCsv} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
         </div>
       </div>
 
@@ -1623,6 +1620,26 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
   );
 }
 
+// writes a real .xlsx (not .csv) so column widths can auto-fit the content —
+// CSV has no way to carry column-width info, which is why Excel falls back to
+// a fixed default width and shows "######" for anything that doesn't fit
+function downloadXlsx(rows, filename, sheetName) {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const cols = [];
+  for (let c = 0; c < (rows[0] ? rows[0].length : 0); c++) {
+    let maxLen = 8;
+    for (const row of rows) {
+      const len = row[c] == null ? 0 : String(row[c]).length;
+      if (len > maxLen) maxLen = len;
+    }
+    cols.push({ wch: maxLen + 2 });
+  }
+  ws['!cols'] = cols;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
+  XLSX.writeFile(wb, filename);
+}
+
 function exportCsv(filtered, reports, rates, leaves = []) {
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ']];
   const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
@@ -1639,11 +1656,7 @@ function exportCsv(filtered, reports, rates, leaves = []) {
   }
   dataRows.sort((a, b) => b.date.localeCompare(a.date) || b.sortId - a.sortId);
   for (const d of dataRows) rows.push(d.row);
-  const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = 'รายงานตอกเสาเข็ม.csv';
-  a.click();
+  downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน');
 }
 
 function App() {

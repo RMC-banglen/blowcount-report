@@ -1020,6 +1020,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
   const [filterWorker, setFilterWorker] = useState('');
   const [filterSite, setFilterSite] = useState('');
   const [filterMonth, setFilterMonth] = useState(currentMonth);
+  const [includeCost, setIncludeCost] = useState(true);
 
   const reportMonths = [...new Set(reports.map(r => r.date.slice(0, 7)))];
   const monthOptions = [...new Set([currentMonth, ...reportMonths])].sort().reverse();
@@ -1080,7 +1081,11 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
           <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
-          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', padding: '0 4px' }}>
+            <input type="checkbox" checked={includeCost} onChange={e => setIncludeCost(e.target.checked)} style={{ width: 16, height: 16 }} />
+            รวมค่ารถ
+          </label>
+          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
 
@@ -1489,7 +1494,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
   );
 }
 
-function PrintReportsView({ rows, subtitle, totals, onClose }) {
+function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', color: '#1a1a1a' }}>
       <div className="no-print" style={{ maxWidth: 900, margin: '0 auto', padding: '16px 24px 0', display: 'flex', gap: 10 }}>
@@ -1512,10 +1517,12 @@ function PrintReportsView({ rows, subtitle, totals, onClose }) {
               <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>สะสม</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'center' }}>เวลา</th>
               <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'left' }}>รถ / ระยะทาง</th>
-              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าสึกหรอ</th>
-              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าออกสนาม</th>
-              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>รวม</th>
-              <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าทางด่วน</th>
+              {!!includeCost && <>
+                <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าสึกหรอ</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าออกสนาม</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>รวม</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 8px', textAlign: 'right' }}>ค่าทางด่วน</th>
+              </>}
             </tr>
           </thead>
           <tbody>
@@ -1529,15 +1536,17 @@ function PrintReportsView({ rows, subtitle, totals, onClose }) {
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{p.cum}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>{p.time}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.vehicle}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.wear)}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.field)}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{num(p.money)}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.toll)}</td>
+                {!!includeCost && <>
+                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.wear)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.field)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{num(p.money)}</td>
+                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.toll)}</td>
+                </>}
               </tr>
             ))}
           </tbody>
         </table>
-        {!!totals && (
+        {!!includeCost && !!totals && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 20 }}>
             <thead>
               <tr style={{ background: '#f0ede9' }}>
@@ -1904,7 +1913,7 @@ function App() {
     for (const r of filtered) { const k = r.worker + '|' + r.date; if (!byWorkerDate[k]) byWorkerDate[k] = r; }
     let wear = 0, field = 0, toll = 0;
     for (const k of Object.keys(byWorkerDate)) { wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType); field += fieldMoney(byWorkerDate[k]); toll += Number(byWorkerDate[k].tollFee) || 0; }
-    setPrintPayload({ kind: 'reports', rows, subtitle, totals: { wear, field, toll, money: wear + field } });
+    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, totals: { wear, field, toll, money: wear + field } });
   };
   const openPrintMonthly = (rows, monthTh) => setPrintPayload({ kind: 'monthly', rows: rows.map(r => ({ ...r, total: r.total })), monthTh });
   const openPrintCar = (rows, grandTotal, monthTh) => setPrintPayload({ kind: 'car', rows, grandTotal, monthTh });
@@ -1913,7 +1922,7 @@ function App() {
   if (loadError) return <div style={{ padding: 40, color: '#f0b3a8' }}>{loadError}</div>;
 
   if (printPayload) {
-    if (printPayload.kind === 'reports') return <PrintReportsView rows={printPayload.rows} subtitle={printPayload.subtitle} totals={printPayload.totals} onClose={() => setPrintPayload(null)} />;
+    if (printPayload.kind === 'reports') return <PrintReportsView rows={printPayload.rows} subtitle={printPayload.subtitle} totals={printPayload.totals} includeCost={printPayload.includeCost} onClose={() => setPrintPayload(null)} />;
     if (printPayload.kind === 'monthly') return <PrintMonthlyView rows={printPayload.rows} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
     if (printPayload.kind === 'car') return <PrintCarView rows={printPayload.rows} grandTotal={printPayload.grandTotal} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
   }

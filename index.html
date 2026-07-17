@@ -1239,7 +1239,9 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
   );
 }
 
-function AdminPilesTab({ reports }) {
+function AdminPilesTab({ reports, finishedSites, onMarkFinished, onUnmarkFinished }) {
+  const [showFinished, setShowFinished] = useState(false);
+  const finishedNames = new Set(finishedSites.map(f => f.site));
   const bySite = {};
   for (const r of reports) {
     for (const it of r.items) {
@@ -1249,21 +1251,37 @@ function AdminPilesTab({ reports }) {
       bySite[site][p] = (bySite[site][p] || 0) + (Number(it.count) || 0);
     }
   }
-  const pileSummary = Object.keys(bySite).sort().map(site => {
+  let pileSummary = Object.keys(bySite).sort().map(site => {
     const rows = Object.keys(bySite[site]).sort();
     const max = Math.max(1, ...rows.map(p => bySite[site][p]));
     let total = 0; rows.forEach(p => total += bySite[site][p]);
-    return { name: site, total, rows: rows.map(p => ({ pile: p, total: bySite[site][p], pct: Math.round(bySite[site][p] / max * 100) })) };
+    return { name: site, total, finished: finishedNames.has(site), rows: rows.map(p => ({ pile: p, total: bySite[site][p], pct: Math.round(bySite[site][p] / max * 100) })) };
   });
+  if (!showFinished) pileSummary = pileSummary.filter(s => !s.finished);
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>ยอดตอกสะสมรายเสา</div>
-      <div style={{ fontSize: 13, color: '#9a958d', marginBottom: 20 }}>แยกตามหน่วยงาน + ชนิดเสา</div>
-      {reports.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>ยังไม่มีข้อมูล</div>}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>ยอดตอกสะสมรายเสา</div>
+          <div style={{ fontSize: 13, color: '#9a958d' }}>แยกตามหน่วยงาน + ชนิดเสา</div>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#c8c3bb', cursor: 'pointer' }}>
+          <input type="checkbox" checked={showFinished} onChange={e => setShowFinished(e.target.checked)} style={{ width: 16, height: 16 }} />
+          แสดงไซต์ที่ตอกจบงานแล้ว
+        </label>
+      </div>
+      {pileSummary.length === 0 && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>ยังไม่มีข้อมูล</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {pileSummary.map(site => (
-          <div key={site.name} style={{ ...card, overflow: 'hidden' }}>
-            <div style={{ background: '#1b1d21', padding: '12px 18px', fontWeight: 800, fontSize: 16, borderLeft: '4px solid #e8762d' }}>{site.name} <span style={{ color: '#9a958d', fontWeight: 500, fontSize: 13 }}>— รวม {num(site.total)} ต้น</span></div>
+          <div key={site.name} style={{ ...card, overflow: 'hidden', opacity: site.finished ? 0.6 : 1 }}>
+            <div style={{ background: '#1b1d21', padding: '12px 18px', fontWeight: 800, fontSize: 16, borderLeft: '4px solid ' + (site.finished ? '#4a4f58' : '#e8762d'), display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div>{site.name} <span style={{ color: '#9a958d', fontWeight: 500, fontSize: 13 }}>— รวม {num(site.total)} ต้น</span>{site.finished && <span style={{ color: '#6dbf5b', fontWeight: 700, fontSize: 12, marginLeft: 8 }}>✓ ตอกจบงานแล้ว</span>}</div>
+              {site.finished ? (
+                <button onClick={() => onUnmarkFinished(site.name)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>ยกเลิกจบงาน</button>
+              ) : (
+                <button onClick={() => { if (confirm('ตั้ง "' + site.name + '" เป็นจบงานแล้ว? จะไม่แสดงในหน้านี้อีก (ยกเลิกได้ภายหลัง)')) onMarkFinished(site.name); }} style={{ background: 'none', border: '1px solid #6dbf5b', color: '#6dbf5b', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>✓ ตอกจบงานแล้ว</button>
+              )}
+            </div>
             <div style={{ padding: '6px 18px 14px' }}>
               {site.rows.map(row => (
                 <div key={row.pile} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #3a3e45' }}>
@@ -1773,6 +1791,7 @@ function App() {
   const [rates, setRates] = useState({ car: 250, moto: 100 });
   const [admins, setAdmins] = useState([]);
   const [monthLocks, setMonthLocks] = useState([]);
+  const [finishedSites, setFinishedSites] = useState([]);
 
   const [view, setView] = useState('admin');
   const [worker, setWorker] = useState(null);
@@ -1785,18 +1804,20 @@ function App() {
 
   const load = useCallback(async () => {
     try {
-      const [wRes, rRes, sRes, lRes, mRes] = await Promise.all([
+      const [wRes, rRes, sRes, lRes, mRes, fRes] = await Promise.all([
         DB.from('field_workers').select('*').order('created_at', { ascending: true }),
         DB.from('field_reports').select('*').order('date', { ascending: false }),
         DB.from('field_settings').select('*'),
         DB.from('field_leaves').select('*').order('date', { ascending: false }),
         DB.from('field_month_locks').select('*'),
+        DB.from('field_finished_sites').select('*'),
       ]);
       if (wRes.error) throw wRes.error;
       if (rRes.error) throw rRes.error;
       if (sRes.error) throw sRes.error;
       if (lRes.error) throw lRes.error;
       if (mRes.error) throw mRes.error;
+      if (fRes.error) throw fRes.error;
 
       setWorkers(wRes.data || []);
       setReports((rRes.data || []).map(r => ({
@@ -1809,6 +1830,7 @@ function App() {
       })));
       setLeaves((lRes.data || []).map(l => ({ id: l.id, worker: l.worker_nick, date: l.date, leaveType: l.leave_type, reason: l.reason || '' })));
       setMonthLocks(mRes.data || []);
+      setFinishedSites(fRes.data || []);
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100 });
       let adminUsers = [];
@@ -1913,6 +1935,16 @@ function App() {
   const lockMonth = async (month) => {
     const { error } = await DB.from('field_month_locks').upsert({ month, locked_by: adminName });
     if (error) return alert('ยืนยันไม่สำเร็จ: ' + error.message);
+    await load();
+  };
+  const markSiteFinished = async (site) => {
+    const { error } = await DB.from('field_finished_sites').upsert({ site, finished_by: adminName });
+    if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+    await load();
+  };
+  const unmarkSiteFinished = async (site) => {
+    const { error } = await DB.from('field_finished_sites').delete().eq('site', site);
+    if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message);
     await load();
   };
   const saveWorker = async ({ fullName, nick, editingNick }) => {
@@ -2043,7 +2075,7 @@ function App() {
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
           {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} onConfirmDistance={confirmDistance} />}
-          {effectiveTab === 'piles' && <AdminPilesTab reports={reports} />}
+          {effectiveTab === 'piles' && <AdminPilesTab reports={reports} finishedSites={finishedSites} onMarkFinished={markSiteFinished} onUnmarkFinished={unmarkSiteFinished} />}
           {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
           {effectiveTab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}

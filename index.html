@@ -105,13 +105,15 @@ function fieldRate(km) {
   if (km <= 150) return 170;
   return 220;
 }
-function fieldFactor(workType) { return workType === 'clear' ? 0.5 : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
-function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile'); }
+// fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
+// usual 50% for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
+function fieldFactor(workType, fullClearRate) { return workType === 'clear' ? (fullClearRate ? 1 : 0.5) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
+function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate); }
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
 function distanceCorrectionMoney(r) {
   if (r.originalDistanceKm == null || Number(r.originalDistanceKm) === Number(r.distanceKm)) return 0;
-  const factor = fieldFactor(r.workType || 'pile');
+  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate);
   return (fieldRate(r.distanceKm) - fieldRate(r.originalDistanceKm)) * factor;
 }
 function wearRate(vehicle, rates, workType) { return workType === 'office' ? 0 : vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
@@ -231,7 +233,7 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, a
   );
 }
 
-function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave, monthLocks }) {
+function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave, monthLocks, fullClearRate }) {
   const [mode, setMode] = useState('report');
   const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
@@ -318,7 +320,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType);
+  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate);
   const sitePiles = f.site.trim()
     ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
     : [];
@@ -1304,6 +1306,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [fullName, setFullName] = useState('');
   const [nick, setNick] = useState('');
   const [editingNick, setEditingNick] = useState(null);
+  const [fullClearRate, setFullClearRate] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(null);
 
@@ -1325,10 +1328,10 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
     if (!full || !n) return setError('กรุณากรอกชื่อ-นามสกุล และชื่อเล่น');
     const dup = workers.some(w => w.nick === n && n !== editingNick);
     if (dup) return setError('ชื่อเล่น "' + n + '" มีอยู่แล้ว กรุณาใช้ชื่ออื่น');
-    onSave({ fullName: full, nick: n, editingNick });
-    setFullName(''); setNick(''); setEditingNick(null); setError('');
+    onSave({ fullName: full, nick: n, editingNick, fullClearRate });
+    setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setError('');
   };
-  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setError(''); };
+  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setError(''); };
 
   return (
     <div>
@@ -1358,6 +1361,10 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <button onClick={save} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '12px 20px', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>{editingNick ? 'บันทึก' : '+ เพิ่ม'}</button>
           {editingNick && <button onClick={cancel} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '12px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: '#c8c3bb', cursor: 'pointer' }}>
+          <input type="checkbox" checked={fullClearRate} onChange={e => setFullClearRate(e.target.checked)} />
+          ได้ค่าเคลียร์พื้นที่หน้างานเต็ม 100% (หัวหน้าดูแลหน้างานโดยตรง)
+        </label>
         {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{error}</div>}
       </div>
 
@@ -1366,11 +1373,11 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div key={w.nick} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{w.full_name} <span style={{ color: '#e8762d', fontWeight: 600, fontSize: 13 }}>({w.nick})</span></div>
-              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ</div>
+              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{w.full_clear_rate ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
-              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(!!w.full_clear_rate); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
                 const n = reports.filter(r => r.worker === w.nick).length;
                 const msg = n > 0 ? 'ลบ ' + w.nick + '? (รายงานเดิม ' + n + ' รายการจะยังอยู่ในระบบ)' : 'ลบ ' + w.nick + '?';
@@ -1819,15 +1826,20 @@ function App() {
       if (mRes.error) throw mRes.error;
       if (fRes.error) throw fRes.error;
 
-      setWorkers(wRes.data || []);
-      setReports((rRes.data || []).map(r => ({
-        id: r.id, worker: r.worker_nick, date: r.date, site: r.site, items: r.items || [],
-        timeIn: r.time_in, timeOut: r.time_out, vehicle: r.vehicle, distanceKm: Number(r.distance_km) || 0,
-        distanceLegs: r.distance_legs || [], tollFee: Number(r.toll_fee) || 0,
-        originalDistanceKm: r.original_distance_km != null ? Number(r.original_distance_km) : null,
-        originalDistanceLegs: r.original_distance_legs || null,
-        workType: r.work_type, note: r.note || ''
-      })));
+      const workersData = wRes.data || [];
+      setWorkers(workersData);
+      setReports((rRes.data || []).map(r => {
+        const wRec = workersData.find(w => w.nick === r.worker_nick);
+        return {
+          id: r.id, worker: r.worker_nick, date: r.date, site: r.site, items: r.items || [],
+          timeIn: r.time_in, timeOut: r.time_out, vehicle: r.vehicle, distanceKm: Number(r.distance_km) || 0,
+          distanceLegs: r.distance_legs || [], tollFee: Number(r.toll_fee) || 0,
+          originalDistanceKm: r.original_distance_km != null ? Number(r.original_distance_km) : null,
+          originalDistanceLegs: r.original_distance_legs || null,
+          fullClearRate: !!(wRec && wRec.full_clear_rate),
+          workType: r.work_type, note: r.note || ''
+        };
+      }));
       setLeaves((lRes.data || []).map(l => ({ id: l.id, worker: l.worker_nick, date: l.date, leaveType: l.leave_type, reason: l.reason || '' })));
       setMonthLocks(mRes.data || []);
       setFinishedSites(fRes.data || []);
@@ -1947,15 +1959,15 @@ function App() {
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message);
     await load();
   };
-  const saveWorker = async ({ fullName, nick, editingNick }) => {
+  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate }) => {
     if (editingNick && editingNick !== nick) {
-      const { error: insErr } = await DB.from('field_workers').insert({ nick, full_name: fullName });
+      const { error: insErr } = await DB.from('field_workers').insert({ nick, full_name: fullName, full_clear_rate: !!fullClearRate });
       if (insErr) return alert('บันทึกไม่สำเร็จ: ' + insErr.message);
       await DB.from('field_reports').update({ worker_nick: nick }).eq('worker_nick', editingNick);
       await DB.from('field_leaves').update({ worker_nick: nick }).eq('worker_nick', editingNick);
       await DB.from('field_workers').delete().eq('nick', editingNick);
     } else {
-      const { error } = await DB.from('field_workers').upsert({ nick, full_name: fullName });
+      const { error } = await DB.from('field_workers').upsert({ nick, full_name: fullName, full_clear_rate: !!fullClearRate });
       if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
     }
     await load();
@@ -2064,7 +2076,7 @@ function App() {
           editingReport={editingReport} onCancelEdit={() => { setEditingReport(null); setEditingAsAdmin(false); }}
           onSave={saveReport} onDelete={deleteReport} onEdit={r => { setEditingReport(r); setEditingAsAdmin(false); }}
           leaves={leaves} onSaveLeave={saveLeave} onDeleteLeave={deleteLeave}
-          monthLocks={monthLocks}
+          monthLocks={monthLocks} fullClearRate={!!(workerRec && workerRec.full_clear_rate)}
         />
       )}
 

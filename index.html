@@ -468,7 +468,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
+              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' && fullClearRate ? 'ค่าออกสนามเต็ม' : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
             </div>
             {(f.workType === 'office' || f.workType === 'office_errand') && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', marginTop: 10 }}>

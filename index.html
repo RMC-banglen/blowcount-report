@@ -347,6 +347,8 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const myByDate = {};
   for (const r of mine) if (!myByDate[r.date]) myByDate[r.date] = r;
   const myDays = Object.keys(myByDate).length;
+  const myLeavesThisMonth = myLeaves.filter(l => l.date.slice(0, 7) === historyMonth);
+  const myLeaveDays = myLeavesThisMonth.length;
   const myTotalPiles = mine.reduce((sum, r) => sum + r.items.reduce((s, it) => s + (Number(it.count) || 0), 0), 0);
   const myField = Object.values(myByDate).reduce((sum, r) => sum + fieldMoney(r), 0);
   const myWear = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType), 0);
@@ -637,6 +639,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           <div style={{ ...card, padding: '12px 16px', marginBottom: 12, display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13, color: '#c8c3bb' }}>
             <span>เดือน {historyMonthTh}</span>
             <span>ทำงาน <b style={{ color: '#e9e6e1' }}>{myDays}</b> วัน</span>
+            {myLeaveDays > 0 && <span>ลา <b style={{ color: '#e9e6e1' }}>{myLeaveDays}</b> วัน</span>}
             <span>ตอกรวม <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(myTotalPiles)}</b> ต้น</span>
             <span>ค่าออกสนาม <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(myField)}</b> บาท</span>
             <span>ค่ารถ <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(myWear)}</b> บาท</span>

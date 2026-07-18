@@ -304,6 +304,8 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     if (f.workType === 'pile' && !items.length) return setError('กรุณากรอกชนิดเสาและจำนวนตอกอย่างน้อย 1 รายการ');
     if (!isOffice && !(totalKm > 0)) return setError('กรุณากรอกระยะทางไปหน้างาน (กม.)');
     if (f.workType === 'office_errand' && !f.note.trim()) return setError('กรุณากรอกเหตุผลที่ถูกใช้งานไปที่อื่น');
+    const dup = myAll.some(r => r.date === f.date && (!editingReport || r.id !== editingReport.id));
+    if (dup) return setError('วันที่นี้มีรายงานบันทึกไว้แล้ว กรุณาแก้ไขรายการเดิมแทนการบันทึกใหม่');
     const report = {
       id: editingReport ? editingReport.id : Date.now(), worker, date: f.date, site: f.site.trim(),
       items, timeIn: f.timeIn, timeOut: f.timeOut, vehicle: f.vehicle,

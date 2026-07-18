@@ -1626,19 +1626,19 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
           <tbody>
             {rows.map((p, i) => (
               <tr key={i}>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px', whiteSpace: 'nowrap' }}>{p.dateTh}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.nick}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.site}</td>
+                {p.isFirst && <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px', whiteSpace: 'nowrap' }}>{p.dateTh}</td>}
+                {p.isFirst && <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.nick}</td>}
+                {p.isFirst && <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.site}</td>}
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.pile}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{p.count}</td>
                 <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{p.cum}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>{p.time}</td>
-                <td style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.vehicle}</td>
-                {!!includeCost && <>
-                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.wear)}</td>
-                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.field)}</td>
-                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{num(p.money)}</td>
-                  <td style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.toll)}</td>
+                {p.isFirst && <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>{p.time}</td>}
+                {p.isFirst && <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px' }}>{p.vehicle}</td>}
+                {!!includeCost && p.isFirst && <>
+                  <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.wear)}</td>
+                  <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.field)}</td>
+                  <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right', fontWeight: 700 }}>{num(p.money)}</td>
+                  <td rowSpan={p.rowSpan} style={{ border: '1px solid #ccc', padding: '5px 8px', textAlign: 'right' }}>{num(p.toll)}</td>
                 </>}
               </tr>
             ))}
@@ -2039,11 +2039,10 @@ function App() {
     const rows = filtered.flatMap(r => {
       const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
-      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-' }];
-      // a report with several pile items becomes several rows here — only the first row should carry
-      // the day's money so it isn't shown as duplicated per item (the grand total below is unaffected,
-      // it's computed separately per worker+date)
-      return r.items.map((it, idx) => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)), wear: idx === 0 ? base.wear : 0, field: idx === 0 ? base.field : 0, money: idx === 0 ? base.money : 0, toll: idx === 0 ? base.toll : 0 }));
+      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
+      // a report with several pile items becomes several rows here — the shared columns (date/site/
+      // time/vehicle/money) are only rendered on the first row and merged (rowSpan) across the rest
+      return r.items.map((it, idx) => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)), rowSpan: r.items.length, isFirst: idx === 0 }));
     });
     const subtitle = [filters.filterWorker && ('พนักงาน: ' + filters.filterWorker), filters.filterSite && ('หน่วยงาน: ' + filters.filterSite),
       (filters.filterDateFrom || filters.filterDateTo) && ('วันที่ ' + (filters.filterDateFrom ? thDate(filters.filterDateFrom) : '...') + ' ถึง ' + (filters.filterDateTo ? thDate(filters.filterDateTo) : '...'))]

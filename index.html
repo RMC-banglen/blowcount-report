@@ -2040,7 +2040,10 @@ function App() {
       const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
       if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-' }];
-      return r.items.map(it => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)) }));
+      // a report with several pile items becomes several rows here — only the first row should carry
+      // the day's money so it isn't shown as duplicated per item (the grand total below is unaffected,
+      // it's computed separately per worker+date)
+      return r.items.map((it, idx) => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)), wear: idx === 0 ? base.wear : 0, field: idx === 0 ? base.field : 0, money: idx === 0 ? base.money : 0, toll: idx === 0 ? base.toll : 0 }));
     });
     const subtitle = [filters.filterWorker && ('พนักงาน: ' + filters.filterWorker), filters.filterSite && ('หน่วยงาน: ' + filters.filterSite),
       (filters.filterDateFrom || filters.filterDateTo) && ('วันที่ ' + (filters.filterDateFrom ? thDate(filters.filterDateFrom) : '...') + ' ถึง ' + (filters.filterDateTo ? thDate(filters.filterDateTo) : '...'))]

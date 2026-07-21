@@ -1816,7 +1816,10 @@ async function downloadXlsx(rows, filename, sheetName, pageSetup) {
       const len = row[c] == null ? 0 : String(row[c]).length;
       if (len > maxLen) maxLen = len;
     }
-    cols.push({ wch: maxLen + 2 });
+    // for a print layout, cap column width so long cells (site name, note, etc.) get cut off
+    // in print rather than pushing every column wider — narrower raw content means the
+    // one-page fit below has to shrink the font much less
+    cols.push({ wch: pageSetup ? Math.min(maxLen + 2, 16) : maxLen + 2 });
   }
   ws['!cols'] = cols;
   if (pageSetup) ws['!margins'] = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };

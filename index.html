@@ -1629,6 +1629,7 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
     <div style={{ background: '#ffffff', minHeight: '100vh', color: '#1a1a1a' }}>
       <div className="no-print" style={{ maxWidth: 900, margin: '0 auto', padding: '16px 24px 0', display: 'flex', gap: 10 }}>
         <button onClick={() => window.print()} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '11px 22px', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>🖨 พิมพ์ / บันทึก PDF</button>
+        <button onClick={() => exportPrintReportsXlsx(rows, totals, includeCost, subtitle)} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '11px 18px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>↓ Export Excel</button>
         <button onClick={onClose} style={{ background: 'none', border: '1px solid #bbb', color: '#555', borderRadius: 6, padding: '11px 18px', fontSize: 14, cursor: 'pointer' }}>← กลับ</button>
       </div>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
@@ -1806,7 +1807,7 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 // writes a real .xlsx (not .csv) so column widths can auto-fit the content —
 // CSV has no way to carry column-width info, which is why Excel falls back to
 // a fixed default width and shows "######" for anything that doesn't fit
-function downloadXlsx(rows, filename, sheetName) {
+function downloadXlsx(rows, filename, sheetName, merges) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const cols = [];
   for (let c = 0; c < (rows[0] ? rows[0].length : 0); c++) {
@@ -1818,9 +1819,37 @@ function downloadXlsx(rows, filename, sheetName) {
     cols.push({ wch: maxLen + 2 });
   }
   ws['!cols'] = cols;
+  if (merges && merges.length) ws['!merges'] = merges;
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
   XLSX.writeFile(wb, filename);
+}
+
+// mirrors PrintReportsView's own rows/totals (rowSpan/isFirst already computed there) into a
+// downloadable .xlsx with the same merged-cell layout, instead of recomputing from raw reports
+function exportPrintReportsXlsx(rows, totals, includeCost, subtitle) {
+  const header = ['วันที่', 'พนักงาน', 'หน่วยงาน', 'ชนิดเสา / ลักษณะงาน', 'จำนวน', 'สะสม', 'เวลา', 'รถ / ระยะทาง'];
+  if (includeCost) header.push('ค่าสึกหรอ', 'ค่าออกสนาม', 'รวม', 'ค่าทางด่วน');
+  const out = [[subtitle], header];
+  const merges = [];
+  let rIdx = 2; // row 0 subtitle, row 1 header
+  for (const p of rows) {
+    const row = [p.isFirst ? p.dateTh : '', p.isFirst ? p.nick : '', p.isFirst ? p.site : '', p.pile, p.count, p.cum, p.isFirst ? p.time : '', p.isFirst ? p.vehicle : ''];
+    if (includeCost) row.push(p.isFirst ? p.wear : '', p.isFirst ? p.field : '', p.isFirst ? p.money : '', p.isFirst ? p.toll : '');
+    out.push(row);
+    if (p.isFirst && p.rowSpan > 1) {
+      const mergeCols = includeCost ? [0, 1, 2, 6, 7, 8, 9, 10, 11] : [0, 1, 2, 6, 7];
+      for (const c of mergeCols) merges.push({ s: { r: rIdx, c }, e: { r: rIdx + p.rowSpan - 1, c } });
+    }
+    rIdx++;
+  }
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } });
+  if (includeCost && totals) {
+    out.push([]);
+    out.push(['ออกสนาม (วัน)', 'ระยะทางไป-กลับรวม (กม.)', 'ค่าสึกหรอ (บาท)', 'ค่าออกสนาม (บาท)', 'รวม (บาท)', 'รวมค่าทางด่วน (บาท)']);
+    out.push([totals.fieldDays, totals.distanceRoundTrip, totals.wear, totals.field, totals.money, totals.toll]);
+  }
+  downloadXlsx(out, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', merges);
 }
 
 function exportCsv(filtered, reports, rates, leaves = [], workers = []) {

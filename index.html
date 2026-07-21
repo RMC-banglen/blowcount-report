@@ -1678,6 +1678,7 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 20 }}>
             <thead>
               <tr style={{ background: '#f0ede9' }}>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ระยะทางไป-กลับรวม (กม.)</th>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าสึกหรอ (บาท)</th>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าออกสนาม (บาท)</th>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>รวม (บาท)</th>
@@ -1686,6 +1687,7 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
             </thead>
             <tbody>
               <tr>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.distanceRoundTrip)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.wear)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.field)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>{num(totals.money)}</td>
@@ -1694,6 +1696,18 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
             </tbody>
           </table>
         )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 60, pageBreakInside: 'avoid' }}>
+          <div style={{ textAlign: 'center', width: '45%' }}>
+            <div style={{ borderBottom: '1px solid #333', height: 40 }}></div>
+            <div style={{ marginTop: 8, fontSize: 13 }}>ลงชื่อ ผู้จัดทำรายงาน</div>
+            <div style={{ fontSize: 12, color: '#666' }}>วันที่ ................</div>
+          </div>
+          <div style={{ textAlign: 'center', width: '45%' }}>
+            <div style={{ borderBottom: '1px solid #333', height: 40 }}></div>
+            <div style={{ marginTop: 8, fontSize: 13 }}>ลงชื่อ ผู้ตรวจสอบ/อนุมัติ</div>
+            <div style={{ fontSize: 12, color: '#666' }}>วันที่ ................</div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1819,7 +1833,7 @@ function exportCsv(filtered, reports, rates, leaves = []) {
     const note = [sundaySwapNote(l.leaveType, l.date), l.reason].filter(Boolean).join(' / ');
     dataRows.push({ date: l.date, sortId: l.id, row: [l.date, l.worker, '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', 0, 0, 0, note] });
   }
-  dataRows.sort((a, b) => b.date.localeCompare(a.date) || b.sortId - a.sortId);
+  dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.sortId - b.sortId);
   for (const d of dataRows) rows.push(d.row);
   downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน');
 }
@@ -2066,7 +2080,8 @@ function App() {
   const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves);
 
   const openPrintReports = (filtered, filters) => {
-    const rows = filtered.flatMap(r => {
+    const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+    const rows = sorted.flatMap(r => {
       const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
       if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
@@ -2080,9 +2095,14 @@ function App() {
     // one report per worker+date counted toward the money totals (a worker only submits once per day)
     const byWorkerDate = {};
     for (const r of filtered) { const k = r.worker + '|' + r.date; if (!byWorkerDate[k]) byWorkerDate[k] = r; }
-    let wear = 0, field = 0, toll = 0;
-    for (const k of Object.keys(byWorkerDate)) { wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType); field += fieldMoney(byWorkerDate[k]); toll += Number(byWorkerDate[k].tollFee) || 0; }
-    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, totals: { wear, field, toll, money: wear + field } });
+    let wear = 0, field = 0, toll = 0, distanceRoundTrip = 0;
+    for (const k of Object.keys(byWorkerDate)) {
+      wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType);
+      field += fieldMoney(byWorkerDate[k]);
+      toll += Number(byWorkerDate[k].tollFee) || 0;
+      distanceRoundTrip += (Number(byWorkerDate[k].distanceKm) || 0) * 2; // ไป-กลับ, display only — money still uses one-way (ขาไป)
+    }
+    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, totals: { wear, field, toll, money: wear + field, distanceRoundTrip } });
   };
   const openPrintMonthly = (rows, monthTh) => setPrintPayload({ kind: 'monthly', rows: rows.map(r => ({ ...r, total: r.total })), monthTh });
   const openPrintCar = (rows, grandTotal, monthTh) => setPrintPayload({ kind: 'car', rows, grandTotal, monthTh });

@@ -1809,14 +1809,15 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 // a fixed default width and shows "######" for anything that doesn't fit
 function downloadXlsx(rows, filename, sheetName, merges) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  const numCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
   const cols = [];
-  for (let c = 0; c < (rows[0] ? rows[0].length : 0); c++) {
+  for (let c = 0; c < numCols; c++) {
     let maxLen = 8;
     for (const row of rows) {
       const len = row[c] == null ? 0 : String(row[c]).length;
       if (len > maxLen) maxLen = len;
     }
-    cols.push({ wch: maxLen + 2 });
+    cols.push({ wch: Math.min(maxLen + 2, 50) });
   }
   ws['!cols'] = cols;
   if (merges && merges.length) ws['!merges'] = merges;

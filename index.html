@@ -97,6 +97,27 @@ function sundaySwapNote(leaveType, iso) {
   return 'สลับวันหยุดจากวันอาทิตย์ที่ ' + thDate(sunIso) + ' มาเป็นวันนี้ (' + thDate(iso) + ' ' + ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][dow] + ')';
 }
 
+// company holiday calendar (พ.ศ. 2569 / ค.ศ. 2026) — Sundays and these dates pay ค่าออกสนาม x2
+const COMPANY_HOLIDAYS_2026 = [
+  '2026-01-01', '2026-01-02', '2026-01-03', // วันปีใหม่
+  '2026-02-16', '2026-02-17', // วันตรุษจีน
+  '2026-03-03', // วันมาฆบูชา
+  '2026-04-11', '2026-04-12', '2026-04-13', '2026-04-14', '2026-04-15', '2026-04-16', // วันสงกรานต์
+  '2026-05-01', // วันแรงงาน
+  '2026-06-03', // วันเฉลิมพระชนมพรรษาสมเด็จพระราชินี
+  '2026-07-28', // วันเฉลิมพระชนมพรรษา พระบาทสมเด็จพระเจ้าอยู่หัว
+  '2026-07-29', // วันอาสาฬหบูชา
+  '2026-08-12', // วันแม่แห่งชาติ
+  '2026-10-13', // วันคล้ายวันสวรรคต รัชกาลที่ 9
+  '2026-12-05', // วันพ่อแห่งชาติ
+  '2026-12-30', '2026-12-31', // วันสิ้นปี
+];
+function isDoubleFieldPayDate(iso) {
+  if (!iso) return false;
+  const [y, m, d] = iso.split('-').map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return dow === 0 || COMPANY_HOLIDAYS_2026.includes(iso);
+}
 function fieldRate(km) {
   km = Number(km) || 0;
   if (km <= 0) return 0;
@@ -108,12 +129,12 @@ function fieldRate(km) {
 // fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
 // usual 50% for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
 function fieldFactor(workType, fullClearRate) { return workType === 'clear' ? (fullClearRate ? 1 : 0.5) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
-function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate); }
+function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate) * (isDoubleFieldPayDate(r.date) ? 2 : 1); }
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
 function distanceCorrectionMoney(r) {
   if (r.originalDistanceKm == null || Number(r.originalDistanceKm) === Number(r.distanceKm)) return 0;
-  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate);
+  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate) * (isDoubleFieldPayDate(r.date) ? 2 : 1);
   return (fieldRate(r.distanceKm) - fieldRate(r.originalDistanceKm)) * factor;
 }
 function wearRate(vehicle, rates, workType) { return workType === 'office' ? 0 : vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
@@ -322,7 +343,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate);
+  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate) * (isDoubleFieldPayDate(f.date) ? 2 : 1);
   const sitePiles = f.site.trim()
     ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
     : [];
@@ -593,7 +614,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
               <button onClick={addLeg} style={{ marginTop: 8, background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', width: '100%' }}>+ เพิ่มระยะทาง (กรณีไปหน้างานอื่นต่อในเส้นทางเดียวกัน — นับขาไปอย่างเดียว)</button>
               {(totalKm > 0 || f.distanceLegs.length > 1) && (
                 <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>
-                  รวมระยะทาง <b>{num(totalKm)}</b> กม.{fieldPreviewVal > 0 && <> · ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท</>}
+                  รวมระยะทาง <b>{num(totalKm)}</b> กม.{fieldPreviewVal > 0 && <> · ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท{isDoubleFieldPayDate(f.date) && <span style={{ color: '#e8762d' }}> (วันหยุด x2)</span>}</>}
                 </div>
               )}
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>

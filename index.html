@@ -1807,19 +1807,23 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 // writes a real .xlsx (not .csv) so column widths can auto-fit the content —
 // CSV has no way to carry column-width info, which is why Excel falls back to
 // a fixed default width and shows "######" for anything that doesn't fit
-function downloadXlsx(rows, filename, sheetName, merges) {
+function downloadXlsx(rows, filename, sheetName, merges, colWidths) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  const numCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
-  const cols = [];
-  for (let c = 0; c < numCols; c++) {
-    let maxLen = 8;
-    for (const row of rows) {
-      const len = row[c] == null ? 0 : String(row[c]).length;
-      if (len > maxLen) maxLen = len;
+  if (colWidths) {
+    ws['!cols'] = colWidths.map(wch => ({ wch }));
+  } else {
+    const numCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const cols = [];
+    for (let c = 0; c < numCols; c++) {
+      let maxLen = 8;
+      for (const row of rows) {
+        const len = row[c] == null ? 0 : String(row[c]).length;
+        if (len > maxLen) maxLen = len;
+      }
+      cols.push({ wch: Math.min(maxLen + 2, 50) });
     }
-    cols.push({ wch: Math.min(maxLen + 2, 50) });
+    ws['!cols'] = cols;
   }
-  ws['!cols'] = cols;
   if (merges && merges.length) ws['!merges'] = merges;
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
@@ -1850,7 +1854,10 @@ function exportPrintReportsXlsx(rows, totals, includeCost, subtitle) {
     out.push(['ออกสนาม (วัน)', 'ระยะทางไป-กลับรวม (กม.)', 'ค่าสึกหรอ (บาท)', 'ค่าออกสนาม (บาท)', 'รวม (บาท)', 'รวมค่าทางด่วน (บาท)']);
     out.push([totals.fieldDays, totals.distanceRoundTrip, totals.wear, totals.field, totals.money, totals.toll]);
   }
-  downloadXlsx(out, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', merges);
+  // column proportions matching PrintReportsView (date/count/cum/time narrow, name/site/pile wide)
+  const colWidths = [12, 26, 22, 30, 8, 8, 12, 20];
+  if (includeCost) colWidths.push(10, 10, 10, 10);
+  downloadXlsx(out, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', merges, colWidths);
 }
 
 function exportCsv(filtered, reports, rates, leaves = [], workers = []) {

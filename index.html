@@ -1169,7 +1169,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select value={filterWorker} onChange={e => setFilterWorker(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
             <option value="">พนักงานทุกคน</option>
-            {workers.map(w => <option key={w.nick} value={w.nick}>{w.nick}</option>)}
+            {workers.map(w => <option key={w.nick} value={w.nick}>{w.full_name} ({w.nick})</option>)}
           </select>
           <select value={filterSite} onChange={e => setFilterSite(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
             <option value="">ทุกหน่วยงาน</option>
@@ -1588,7 +1588,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select value={filterWorker} onChange={e => setFilterWorker(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
             <option value="">พนักงานทุกคน</option>
-            {workers.map(w => <option key={w.nick} value={w.nick}>{w.nick}</option>)}
+            {workers.map(w => <option key={w.nick} value={w.nick}>{w.full_name} ({w.nick})</option>)}
           </select>
           <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
             <option value="">ทุกเดือน</option>

@@ -1820,7 +1820,7 @@ function downloadXlsx(rows, filename, sheetName) {
 }
 
 function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
-  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' - ' + nick : nick; };
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ']];
   const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
   const dataRows = [];
@@ -2080,7 +2080,7 @@ function App() {
 
   const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves, workers);
 
-  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' - ' + nick : nick; };
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const openPrintReports = (filtered, filters) => {
     const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
     const rows = sorted.flatMap(r => {

@@ -129,12 +129,14 @@ function fieldRate(km) {
 // fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
 // usual 50% for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
 function fieldFactor(workType, fullClearRate) { return workType === 'clear' ? (fullClearRate ? 1 : 0.5) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
-function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate) * (isDoubleFieldPayDate(r.date) ? 2 : 1); }
+// double pay applies once (not stacked) whether it's from a holiday/Sunday or from running 2 rigs
+function doubleFieldPay(r) { return isDoubleFieldPayDate(r.date) || !!r.dualRig; }
+function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate) * (doubleFieldPay(r) ? 2 : 1); }
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
 function distanceCorrectionMoney(r) {
   if (r.originalDistanceKm == null || Number(r.originalDistanceKm) === Number(r.distanceKm)) return 0;
-  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate) * (isDoubleFieldPayDate(r.date) ? 2 : 1);
+  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate) * (doubleFieldPay(r) ? 2 : 1);
   return (fieldRate(r.distanceKm) - fieldRate(r.originalDistanceKm)) * factor;
 }
 function wearRate(vehicle, rates, workType) { return workType === 'office' ? 0 : vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
@@ -256,14 +258,14 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, a
 
 function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave, monthLocks, fullClearRate }) {
   const [mode, setMode] = useState('report');
-  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '' };
+  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '', dualRig: false };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
     items: editingReport.items.length ? editingReport.items.map(legacyPileItem) : [{ ...blankPileItem }],
     timeIn: editingReport.timeIn, timeOut: editingReport.timeOut, vehicle: editingReport.vehicle,
     distanceLegs: legsFrom(editingReport), tollFee: editingReport.tollFee ? String(editingReport.tollFee) : '',
-    workType: editingReport.workType || 'pile', note: editingReport.note || ''
+    workType: editingReport.workType || 'pile', note: editingReport.note || '', dualRig: !!editingReport.dualRig
   } : blank);
   const [error, setError] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
@@ -302,7 +304,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         items: editingReport.items.length ? editingReport.items.map(legacyPileItem) : [{ ...blankPileItem }],
         timeIn: editingReport.timeIn, timeOut: editingReport.timeOut, vehicle: editingReport.vehicle,
         distanceLegs: legsFrom(editingReport), tollFee: editingReport.tollFee ? String(editingReport.tollFee) : '',
-        workType: editingReport.workType || 'pile', note: editingReport.note || ''
+        workType: editingReport.workType || 'pile', note: editingReport.note || '', dualRig: !!editingReport.dualRig
       });
       window.scrollTo(0, 0);
     }
@@ -333,7 +335,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
       distanceKm: totalKm,
       distanceLegs: f.distanceLegs.filter(l => Number(l.km) > 0).map(l => ({ km: Number(l.km), note: l.note.trim() })),
       tollFee: Number(f.tollFee) || 0,
-      workType: f.workType, note: f.note.trim()
+      workType: f.workType, note: f.note.trim(), dualRig: !!f.dualRig
     };
     onSave(report);
     setError(''); setSavedFlash(true);
@@ -343,7 +345,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate) * (isDoubleFieldPayDate(f.date) ? 2 : 1);
+  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate) * (isDoubleFieldPayDate(f.date) || f.dualRig ? 2 : 1);
   const sitePiles = f.site.trim()
     ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
     : [];
@@ -504,6 +506,13 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           </div>
 
           {f.workType === 'pile' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!f.dualRig} onChange={e => setF(s => ({ ...s, dualRig: e.target.checked }))} style={{ width: 18, height: 18, flexShrink: 0 }} />
+              <span style={{ fontSize: 14, color: '#e9e6e1' }}>คุมปั่นจั่น 2 ตัว — <span style={{ color: '#f0b98c' }}>ได้ค่าออกสนาม 2 เท่า</span></span>
+            </label>
+          )}
+
+          {f.workType === 'pile' && (
             <div>
               <div style={{ ...labelStyle, marginBottom: 8 }}>รายการตอกเสาเข็ม</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -614,7 +623,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
               <button onClick={addLeg} style={{ marginTop: 8, background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', width: '100%' }}>+ เพิ่มระยะทาง (กรณีไปหน้างานอื่นต่อในเส้นทางเดียวกัน — นับขาไปอย่างเดียว)</button>
               {(totalKm > 0 || f.distanceLegs.length > 1) && (
                 <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>
-                  รวมระยะทาง <b>{num(totalKm)}</b> กม.{fieldPreviewVal > 0 && <> · ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท{isDoubleFieldPayDate(f.date) && <span style={{ color: '#e8762d' }}> (วันหยุด x2)</span>}</>}
+                  รวมระยะทาง <b>{num(totalKm)}</b> กม.{fieldPreviewVal > 0 && <> · ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท{(isDoubleFieldPayDate(f.date) || f.dualRig) && <span style={{ color: '#e8762d' }}> ({isDoubleFieldPayDate(f.date) ? 'วันหยุด' : 'คุมปั่นจั่น 2 ตัว'} x2)</span>}</>}
                 </div>
               )}
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
@@ -1863,7 +1872,7 @@ function App() {
           originalDistanceKm: r.original_distance_km != null ? Number(r.original_distance_km) : null,
           originalDistanceLegs: r.original_distance_legs || null,
           fullClearRate: !!(wRec && wRec.full_clear_rate),
-          workType: r.work_type, note: r.note || ''
+          workType: r.work_type, note: r.note || '', dualRig: !!r.dual_rig
         };
       }));
       setLeaves((lRes.data || []).map(l => ({ id: l.id, worker: l.worker_nick, date: l.date, leaveType: l.leave_type, reason: l.reason || '' })));
@@ -1926,7 +1935,7 @@ function App() {
       time_in: report.timeIn, time_out: report.timeOut, vehicle: report.vehicle,
       distance_km: report.distanceKm, distance_legs: report.distanceLegs || [], toll_fee: report.tollFee || 0,
       original_distance_km: originalDistanceKm, original_distance_legs: originalDistanceLegs,
-      work_type: report.workType, note: report.note
+      work_type: report.workType, note: report.note, dual_rig: !!report.dualRig
     };
     const { error } = await DB.from('field_reports').upsert(row);
     if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
@@ -1948,7 +1957,7 @@ function App() {
       time_in: report.timeIn, time_out: report.timeOut, vehicle: report.vehicle,
       distance_km: newKm, distance_legs: [{ km: newKm, note: '' }], toll_fee: report.tollFee || 0,
       original_distance_km: originalDistanceKm, original_distance_legs: originalDistanceLegs,
-      work_type: report.workType, note: report.note
+      work_type: report.workType, note: report.note, dual_rig: !!report.dualRig
     };
     const { error } = await DB.from('field_reports').upsert(row);
     if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);

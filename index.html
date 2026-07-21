@@ -1819,19 +1819,20 @@ function downloadXlsx(rows, filename, sheetName) {
   XLSX.writeFile(wb, filename);
 }
 
-function exportCsv(filtered, reports, rates, leaves = []) {
+function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' - ' + nick : nick; };
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ']];
   const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
   const dataRows = [];
   for (const r of filtered) {
-    const base = [r.date, r.worker, r.site, wtTh(r.workType)];
+    const base = [r.date, workerLabel(r.worker), r.site, wtTh(r.workType)];
     const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), r.distanceKm || '', wearRate(r.vehicle, rates, r.workType), fieldMoney(r), Number(r.tollFee) || 0, r.note || ''];
     if (r.items.length) for (const it of r.items) dataRows.push({ date: r.date, sortId: r.id, row: [...base, it.pile, it.count, cumFor(reports, r.site, it.pile, r.date, null), ...tail] });
     else dataRows.push({ date: r.date, sortId: r.id, row: [...base, '', '', '', ...tail] });
   }
   for (const l of leaves) {
     const note = [sundaySwapNote(l.leaveType, l.date), l.reason].filter(Boolean).join(' / ');
-    dataRows.push({ date: l.date, sortId: l.id, row: [l.date, l.worker, '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', 0, 0, 0, note] });
+    dataRows.push({ date: l.date, sortId: l.id, row: [l.date, workerLabel(l.worker), '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', 0, 0, 0, note] });
   }
   dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.sortId - b.sortId);
   for (const d of dataRows) rows.push(d.row);
@@ -2077,19 +2078,20 @@ function App() {
     return ok;
   };
 
-  const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves);
+  const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves, workers);
 
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' - ' + nick : nick; };
   const openPrintReports = (filtered, filters) => {
     const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
     const rows = sorted.flatMap(r => {
       const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
-      const base = { dateTh: thDate(r.date), nick: r.worker, site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
+      const base = { dateTh: thDate(r.date), nick: workerLabel(r.worker), site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
       if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
       // a report with several pile items becomes several rows here — the shared columns (date/site/
       // time/vehicle/money) are only rendered on the first row and merged (rowSpan) across the rest
       return r.items.map((it, idx) => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)), rowSpan: r.items.length, isFirst: idx === 0 }));
     });
-    const subtitle = [filters.filterWorker && ('พนักงาน: ' + filters.filterWorker), filters.filterSite && ('หน่วยงาน: ' + filters.filterSite),
+    const subtitle = [filters.filterWorker && ('พนักงาน: ' + workerLabel(filters.filterWorker)), filters.filterSite && ('หน่วยงาน: ' + filters.filterSite),
       (filters.filterDateFrom || filters.filterDateTo) && ('วันที่ ' + (filters.filterDateFrom ? thDate(filters.filterDateFrom) : '...') + ' ถึง ' + (filters.filterDateTo ? thDate(filters.filterDateTo) : '...'))]
       .filter(Boolean).join(' · ') || ('ทั้งหมด ' + filtered.length + ' รายการ');
     // one report per worker+date counted toward the money totals (a worker only submits once per day)

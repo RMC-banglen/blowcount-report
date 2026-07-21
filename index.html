@@ -51,6 +51,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <script>
 // Dedicated Supabase project for this feature (separate from index.html's project).
@@ -1806,7 +1807,7 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 // writes a real .xlsx (not .csv) so column widths can auto-fit the content —
 // CSV has no way to carry column-width info, which is why Excel falls back to
 // a fixed default width and shows "######" for anything that doesn't fit
-function downloadXlsx(rows, filename, sheetName) {
+async function downloadXlsx(rows, filename, sheetName, pageSetup) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const cols = [];
   for (let c = 0; c < (rows[0] ? rows[0].length : 0); c++) {
@@ -1818,9 +1819,30 @@ function downloadXlsx(rows, filename, sheetName) {
     cols.push({ wch: maxLen + 2 });
   }
   ws['!cols'] = cols;
+  if (pageSetup) ws['!margins'] = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
-  XLSX.writeFile(wb, filename);
+  if (!pageSetup) return XLSX.writeFile(wb, filename);
+  // SheetJS's free build can set !margins but can't write orientation/paper size/fit-to-page —
+  // those need a real <pageSetup> element, so patch the generated sheet XML by hand for a
+  // proper print-ready A4 sheet (falls back to a plain download if patching fails)
+  try {
+    const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const zip = await JSZip.loadAsync(arr);
+    const sheetPath = 'xl/worksheets/sheet1.xml';
+    let xml = await zip.file(sheetPath).async('string');
+    xml = xml.replace('><dimension', '><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension');
+    xml = xml.replace(/(<pageMargins[^>]*\/>)/, '$1<pageSetup paperSize="9" orientation="' + (pageSetup.orientation || 'portrait') + '" fitToWidth="1" fitToHeight="0"/>');
+    zip.file(sheetPath, xml);
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) {
+    XLSX.writeFile(wb, filename);
+  }
 }
 
 function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
@@ -1840,7 +1862,7 @@ function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
   }
   dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.sortId - b.sortId);
   for (const d of dataRows) rows.push(d.row);
-  downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน');
+  downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', { orientation: 'landscape' });
 }
 
 function App() {

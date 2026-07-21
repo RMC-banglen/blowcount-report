@@ -1117,7 +1117,7 @@ function DistanceConfirmCell({ report, disabled, onConfirm }) {
   );
 }
 
-function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, monthLocks, canConfirmMonth, onLockMonth, onConfirmDistance }) {
+function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, onExportPdfStyleXlsx, monthLocks, canConfirmMonth, onLockMonth, onConfirmDistance }) {
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const todayIso = todayLocalIso();
   const currentMonth = todayIso.slice(0, 7);
@@ -1185,6 +1185,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
           <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
+          <button onClick={() => onExportPdfStyleXlsx(filtered, includeCost)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#c8c3bb', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel (แบบ PDF)</button>
           <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', padding: '0 4px' }}>
             <input type="checkbox" checked={includeCost} onChange={e => setIncludeCost(e.target.checked)} style={{ width: 16, height: 16 }} />
@@ -1806,7 +1807,7 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 // writes a real .xlsx (not .csv) so column widths can auto-fit the content —
 // CSV has no way to carry column-width info, which is why Excel falls back to
 // a fixed default width and shows "######" for anything that doesn't fit
-function downloadXlsx(rows, filename, sheetName) {
+function downloadXlsx(rows, filename, sheetName, merges) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const cols = [];
   for (let c = 0; c < (rows[0] ? rows[0].length : 0); c++) {
@@ -1818,6 +1819,7 @@ function downloadXlsx(rows, filename, sheetName) {
     cols.push({ wch: maxLen + 2 });
   }
   ws['!cols'] = cols;
+  if (merges && merges.length) ws['!merges'] = merges;
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
   XLSX.writeFile(wb, filename);
@@ -1841,6 +1843,36 @@ function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
   dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.sortId - b.sortId);
   for (const d of dataRows) rows.push(d.row);
   downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน');
+}
+
+// same layout as PrintReportsView (merged cells for a multi-item day) but as a downloadable .xlsx
+function exportPdfStyleXlsx(filtered, workers, reports, rates, includeCost) {
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
+  const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  const header = ['วันที่', 'พนักงาน', 'หน่วยงาน', 'ชนิดเสา / ลักษณะงาน', 'จำนวน', 'สะสม', 'เวลา', 'รถ / ระยะทาง'];
+  if (includeCost) header.push('ค่าสึกหรอ', 'ค่าออกสนาม', 'รวม', 'ค่าทางด่วน');
+  const rows = [header];
+  const merges = [];
+  let rIdx = 1; // row 0 is the header
+  for (const r of sorted) {
+    const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
+    const dateTh = thDate(r.date), nick = workerLabel(r.worker), time = r.timeIn + '–' + r.timeOut;
+    const vehicle = vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : '');
+    const lines = r.items.length
+      ? r.items.map(it => ({ pile: it.pile, count: Number(it.count) || 0, cum: cumFor(reports, r.site, it.pile, r.date, null) }))
+      : [{ pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-' }];
+    lines.forEach((ln, idx) => {
+      const row = [idx === 0 ? dateTh : '', idx === 0 ? nick : '', idx === 0 ? r.site : '', ln.pile, ln.count, ln.cum, idx === 0 ? time : '', idx === 0 ? vehicle : ''];
+      if (includeCost) row.push(idx === 0 ? wear : '', idx === 0 ? field : '', idx === 0 ? wear + field : '', idx === 0 ? toll : '');
+      rows.push(row);
+    });
+    if (lines.length > 1) {
+      const mergeCols = includeCost ? [0, 1, 2, 6, 7, 8, 9, 10, 11] : [0, 1, 2, 6, 7];
+      for (const c of mergeCols) merges.push({ s: { r: rIdx, c }, e: { r: rIdx + lines.length - 1, c } });
+    }
+    rIdx += lines.length;
+  }
+  downloadXlsx(rows, 'รายงานตอกเสาเข็ม (แบบ PDF).xlsx', 'รายงาน', merges);
 }
 
 function App() {
@@ -2083,6 +2115,7 @@ function App() {
   };
 
   const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves, workers);
+  const doExportPdfStyleXlsx = (filtered, includeCost) => exportPdfStyleXlsx(filtered, workers, reports, rates, includeCost);
 
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const openPrintReports = (filtered, filters) => {
@@ -2151,7 +2184,7 @@ function App() {
 
       {view === 'admin' && adminAuthed && (
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 80px' }}>
-          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} onConfirmDistance={confirmDistance} />}
+          {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} onExportPdfStyleXlsx={doExportPdfStyleXlsx} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} onConfirmDistance={confirmDistance} />}
           {effectiveTab === 'piles' && <AdminPilesTab reports={reports} finishedSites={finishedSites} onMarkFinished={markSiteFinished} onUnmarkFinished={unmarkSiteFinished} />}
           {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
           {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}

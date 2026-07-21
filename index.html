@@ -1118,6 +1118,7 @@ function DistanceConfirmCell({ report, disabled, onConfirm }) {
 }
 
 function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelete, onPrint, onExportCsv, monthLocks, canConfirmMonth, onLockMonth, onConfirmDistance }) {
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const todayIso = todayLocalIso();
   const currentMonth = todayIso.slice(0, 7);
   const [filterWorker, setFilterWorker] = useState('');
@@ -1222,7 +1223,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
             return (
               <div key={'l-' + l.id} className="rg-stack" style={{ ...card, borderLeft: '4px solid #f0b98c', padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto 130px', gap: 14, alignItems: 'start' }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{l.worker}</div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{workerLabel(l.worker)}</div>
                   <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(l.date)}</div>
                 </div>
                 <div>
@@ -1239,7 +1240,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
           return (
           <div key={'r-' + r.id} className="rg-stack" style={{ ...card, padding: '14px 16px', display: 'grid', gridTemplateColumns: '120px 1fr auto 130px', gap: 14, alignItems: 'start' }}>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{r.worker}</div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#e8762d' }}>{workerLabel(r.worker)}</div>
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 2 }}>{thDate(r.date)}</div>
               <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 2 }}>{r.site}</div>
             </div>
@@ -1559,6 +1560,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
 }
 
 function AdminLeavesTab({ workers, leaves, onDelete }) {
+  const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const currentMonth = todayLocalMonth();
   const [filterWorker, setFilterWorker] = useState('');
   const [filterMonth, setFilterMonth] = useState(currentMonth);
@@ -1574,7 +1576,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
 
   const exportLeavesCsv = () => {
     const rows = [['วันที่', 'พนักงาน', 'ประเภท', 'หมายเหตุการสลับวันหยุด', 'เหตุผล']];
-    for (const l of filtered) rows.push([l.date, l.worker, leaveTypeTh(l.leaveType), sundaySwapNote(l.leaveType, l.date) || '', l.reason || '']);
+    for (const l of filtered) rows.push([l.date, workerLabel(l.worker), leaveTypeTh(l.leaveType), sundaySwapNote(l.leaveType, l.date) || '', l.reason || '']);
     downloadXlsx(rows, 'วันหยุดพนักงาน.xlsx', 'วันหยุด');
   };
 
@@ -1608,7 +1610,7 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
         {filtered.map(l => (
           <div key={l.id} className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '110px 100px 1fr auto', gap: 14, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ fontSize: 13, color: '#9a958d' }}>{thDate(l.date)}</div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: '#e8762d' }}>{l.worker}</div>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#e8762d' }}>{workerLabel(l.worker)}</div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{leaveTypeTh(l.leaveType)}</div>
               {!!sundaySwapNote(l.leaveType, l.date) && <div style={{ fontSize: 12, color: '#f0b98c', marginTop: 2 }}>⚠ {sundaySwapNote(l.leaveType, l.date)}</div>}

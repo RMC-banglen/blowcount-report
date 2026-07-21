@@ -1831,9 +1831,10 @@ async function downloadXlsx(rows, filename, sheetName, pageSetup) {
     const zip = await JSZip.loadAsync(arr);
     const sheetPath = 'xl/worksheets/sheet1.xml';
     let xml = await zip.file(sheetPath).async('string');
-    // scale="100" (not fitToWidth) — fit-to-page shrank the text too small to read with this
-    // many columns; printing at full size across a couple of pages reads better than tiny text
-    xml = xml.replace(/(<pageMargins[^>]*\/>)/, '$1<pageSetup paperSize="9" scale="100" orientation="' + (pageSetup.orientation || 'portrait') + '"/>');
+    // fit everything onto one page wide (any number of pages tall) — shrinks text, but keeping
+    // the report on a single page matters more here than full-size type
+    xml = xml.replace('><dimension', '><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension');
+    xml = xml.replace(/(<pageMargins[^>]*\/>)/, '$1<pageSetup paperSize="9" orientation="' + (pageSetup.orientation || 'portrait') + '" fitToWidth="1" fitToHeight="1"/>');
     zip.file(sheetPath, xml);
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);

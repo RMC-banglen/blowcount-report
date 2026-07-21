@@ -51,6 +51,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <script>
 // Dedicated Supabase project for this feature (separate from index.html's project).
@@ -1807,7 +1808,7 @@ function PrintCarView({ rows, grandTotal, monthTh, onClose }) {
 // writes a real .xlsx (not .csv) so column widths can auto-fit the content —
 // CSV has no way to carry column-width info, which is why Excel falls back to
 // a fixed default width and shows "######" for anything that doesn't fit
-function downloadXlsx(rows, filename, sheetName, merges) {
+async function downloadXlsx(rows, filename, sheetName, merges, pageSetup) {
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const cols = [];
   for (let c = 0; c < (rows[0] ? rows[0].length : 0); c++) {
@@ -1820,9 +1821,30 @@ function downloadXlsx(rows, filename, sheetName, merges) {
   }
   ws['!cols'] = cols;
   if (merges && merges.length) ws['!merges'] = merges;
+  if (pageSetup) ws['!margins'] = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
-  XLSX.writeFile(wb, filename);
+  if (!pageSetup) return XLSX.writeFile(wb, filename);
+  // SheetJS's free build can set !margins but can't write orientation/paper size/fit-to-page —
+  // those need a real <pageSetup> element, so patch the generated sheet XML by hand for a
+  // proper print-ready A4 portrait sheet (falls back to a plain download if patching fails)
+  try {
+    const arr = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const zip = await JSZip.loadAsync(arr);
+    const sheetPath = 'xl/worksheets/sheet1.xml';
+    let xml = await zip.file(sheetPath).async('string');
+    xml = xml.replace('><dimension', '><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension');
+    xml = xml.replace(/(<pageMargins[^>]*\/>)/, '$1<pageSetup paperSize="9" orientation="' + (pageSetup.orientation || 'portrait') + '" fitToWidth="1" fitToHeight="0"/>');
+    zip.file(sheetPath, xml);
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) {
+    XLSX.writeFile(wb, filename);
+  }
 }
 
 function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
@@ -1845,7 +1867,7 @@ function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
   downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน');
 }
 
-// same layout as PrintReportsView (merged cells for a multi-item day) but as a downloadable .xlsx
+// same layout as PrintReportsView (merged cells for a multi-item day, totals, signatures) as a downloadable .xlsx
 function exportPdfStyleXlsx(filtered, workers, reports, rates, includeCost) {
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
@@ -1854,7 +1876,10 @@ function exportPdfStyleXlsx(filtered, workers, reports, rates, includeCost) {
   const rows = [header];
   const merges = [];
   let rIdx = 1; // row 0 is the header
+  const byWorkerDate = {};
   for (const r of sorted) {
+    const k = r.worker + '|' + r.date;
+    if (!byWorkerDate[k]) byWorkerDate[k] = r;
     const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
     const dateTh = thDate(r.date), nick = workerLabel(r.worker), time = r.timeIn + '–' + r.timeOut;
     const vehicle = vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : '');
@@ -1872,7 +1897,24 @@ function exportPdfStyleXlsx(filtered, workers, reports, rates, includeCost) {
     }
     rIdx += lines.length;
   }
-  downloadXlsx(rows, 'รายงานตอกเสาเข็ม (แบบ PDF).xlsx', 'รายงาน', merges);
+  if (includeCost) {
+    let wear = 0, field = 0, toll = 0, distanceRoundTrip = 0, fieldDays = 0;
+    for (const k of Object.keys(byWorkerDate)) {
+      const fm = fieldMoney(byWorkerDate[k]);
+      wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType);
+      field += fm;
+      toll += Number(byWorkerDate[k].tollFee) || 0;
+      distanceRoundTrip += (Number(byWorkerDate[k].distanceKm) || 0) * 2;
+      if (fm > 0) fieldDays++;
+    }
+    rows.push([]);
+    rows.push(['ออกสนาม (วัน)', 'ระยะทางไป-กลับรวม (กม.)', 'ค่าสึกหรอ (บาท)', 'ค่าออกสนาม (บาท)', 'รวม (บาท)', 'รวมค่าทางด่วน (บาท)']);
+    rows.push([fieldDays, distanceRoundTrip, wear, field, wear + field, toll]);
+  }
+  rows.push([]);
+  rows.push(['ลงชื่อ ผู้จัดทำรายงาน ....................................']);
+  rows.push(['ลงชื่อ ผู้ตรวจสอบ/อนุมัติ ....................................']);
+  downloadXlsx(rows, 'รายงานตอกเสาเข็ม (แบบ PDF).xlsx', 'รายงาน', merges, { orientation: 'portrait' });
 }
 
 function App() {

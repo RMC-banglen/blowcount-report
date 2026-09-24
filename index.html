@@ -50,7 +50,8 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- SheetJS 0.18.5 fork that also writes cell styles (alignment for merged cells) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
@@ -1830,6 +1831,17 @@ function buildXlsxWorkbook(rows, sheetName, merges, colWidths) {
     ws['!cols'] = cols;
   }
   if (merges && merges.length) ws['!merges'] = merges;
+  // vertically center everything so merged cells (date/worker on multi-item days) sit in the
+  // middle of their block instead of Excel's default bottom; merged cells and the header row are
+  // also centered horizontally
+  const mergedTopLeft = new Set((merges || []).map(m => m.s.r + ',' + m.s.c));
+  const headerRow = rows.length > 1 && rows[0].length === 1 ? 1 : 0; // print export has a title row first
+  for (const addr of Object.keys(ws)) {
+    if (addr[0] === '!') continue;
+    const { r, c } = XLSX.utils.decode_cell(addr);
+    const center = r === headerRow || mergedTopLeft.has(r + ',' + c);
+    ws[addr].s = { alignment: { vertical: 'center', ...(center ? { horizontal: 'center' } : {}) }, ...(r === headerRow ? { font: { bold: true } } : {}) };
+  }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
   return wb;

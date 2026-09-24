@@ -2011,9 +2011,32 @@ function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
     }
   }
   ws['A1'].s = { font: { bold: true, sz: 14 }, alignment: { horizontal: 'center', vertical: 'center' } };
+  ws['!margins'] = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'สรุปรายเดือน');
-  XLSX.writeFile(wb, safeFileName(title) + '.xlsx');
+  downloadWithPrintSetup(wb, safeFileName(title) + '.xlsx');
+}
+
+// SheetJS can't write paper size/orientation/fit-to-page, so patch the sheet XML: A4 landscape,
+// all columns on one page wide (as many pages tall as needed), centered — prints without setup
+async function downloadWithPrintSetup(wb, filename) {
+  try {
+    const zip = await JSZip.loadAsync(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
+    const path = 'xl/worksheets/sheet1.xml';
+    let xml = await zip.file(path).async('string');
+    xml = xml.replace('><dimension', '><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension');
+    xml = xml.replace(/<pageMargins/, '<printOptions horizontalCentered="1"/><pageMargins');
+    xml = xml.replace(/(<pageMargins[^>]*\/>)/, '$1<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>');
+    zip.file(path, xml);
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) {
+    XLSX.writeFile(wb, filename);
+  }
 }
 
 // strips characters Windows doesn't allow in file names

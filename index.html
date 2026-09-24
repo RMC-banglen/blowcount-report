@@ -1482,6 +1482,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }} />
+          <button onClick={() => exportMonthlySummaryXlsx(workers, monReports, rates, monthTh)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Excel สรุปรายเดือน</button>
           <button onClick={() => onPrint(rows, monthTh)} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
@@ -1905,6 +1906,90 @@ function exportPrintReportsXlsx(rows, totals, includeCost, subtitle, fileName = 
   const colWidths = [12, 26, 22, 30, 8, 8, 12, 20];
   if (includeCost) colWidths.push(10, 10, 10, 10);
   downloadXlsx(out, safeFileName(fileName) + '.xlsx', 'รายงาน', merges, colWidths);
+}
+
+// accounting's monthly payroll sheet (สรุปรายงานโฟร์แมน): one row per worker with ค่าออกสนาม day
+// counts per distance tier, ค่ารถ, a blank หักเงิน column accounting fills in (รวมรายได้ is a formula
+// so it updates), and OT days worked on Sundays / company holidays
+function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
+  const TIERS = [70, 120, 170, 220];
+  const title = 'สรุปรายงานโฟร์แมน ประจำเดือน ' + monthTh;
+  const aoa = [
+    [title],
+    ['ลำดับที่', 'ชื่อ-สกุล', 'ชื่อเล่น', 'ค่าออกสนาม', '', '', '', 'รวม/บาท', 'ค่ารถ', '', 'รวม/บาท', 'หักเงิน', 'รวมรายได้ทั้งหมด/บาท', 'OT วันหยุด/วัน', '', 'หมายเหตุ'],
+    ['', '', '', ...TIERS, '', 'จำนวนวัน', 'รายได้/บาท', '', '', '', 'อาทิตย์', 'วันหยุดบริษัท', ''],
+  ];
+  const merges = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 15 } },
+    { s: { r: 1, c: 3 }, e: { r: 1, c: 6 } }, { s: { r: 1, c: 8 }, e: { r: 1, c: 9 } }, { s: { r: 1, c: 13 }, e: { r: 1, c: 14 } },
+    ...[0, 1, 2, 7, 10, 11, 12, 15].map(c => ({ s: { r: 1, c }, e: { r: 2, c } })),
+  ];
+  const n = (v, f) => ({ t: 'n', v, ...(f ? { f } : {}) });
+  let seq = 0;
+  for (const w of workers) {
+    const mine = monReports.filter(r => r.worker === w.nick);
+    if (!mine.length) continue;
+    const byDate = {};
+    for (const r of mine) if (!byDate[r.date]) byDate[r.date] = r; // money is paid once per day
+    const tierDays = TIERS.map(() => 0);
+    let field = 0, wear = 0, wearDays = 0;
+    const wearRates = new Set();
+    for (const r of Object.values(byDate)) {
+      const fm = fieldMoney(r);
+      if (fm > 0) { tierDays[TIERS.indexOf(fieldRate(r.distanceKm))] += fm / fieldRate(r.distanceKm); field += fm; }
+      const wr = wearRate(r.vehicle, rates, r.workType);
+      if (wr > 0) { wear += wr; wearDays++; wearRates.add(wr); }
+    }
+    const { sundays, holidays } = countHolidayWork(mine);
+    const x = aoa.length + 1; // 1-based Excel row
+    seq++;
+    aoa.push([
+      seq, w.full_name, w.nick, ...tierDays.map(d => d || ''),
+      n(field, 'D' + x + '*70+E' + x + '*120+F' + x + '*170+G' + x + '*220'),
+      wearDays || '', wearRates.size === 1 ? [...wearRates][0] : '', n(wear),
+      '', n(field + wear, 'H' + x + '+K' + x + '-L' + x),
+      sundays || '', holidays || '', '',
+    ]);
+  }
+  if (!seq) { alert('ไม่มีรายงานในเดือนนี้'); return; }
+  const first = 4, last = aoa.length;
+  const sumCols = { 3: 'D', 4: 'E', 5: 'F', 6: 'G', 7: 'H', 8: 'I', 10: 'K', 11: 'L', 12: 'M', 13: 'N', 14: 'O' };
+  const total = new Array(16).fill('');
+  total[1] = 'รวม';
+  for (const [c, col] of Object.entries(sumCols)) {
+    const v = aoa.slice(3).reduce((s, row) => { const cell = row[c]; return s + (typeof cell === 'number' ? cell : cell && typeof cell.v === 'number' ? cell.v : 0); }, 0);
+    total[c] = n(v, 'SUM(' + col + first + ':' + col + last + ')');
+  }
+  aoa.push(total);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
+  ws['!cols'] = [6, 28, 11, 7, 7, 7, 7, 10, 9, 10, 10, 9, 14, 9, 11, 36].map(wch => ({ wch }));
+  ws['!rows'] = [{ hpt: 26 }];
+  const thin = { style: 'thin', color: { rgb: '000000' } };
+  const border = { top: thin, bottom: thin, left: thin, right: thin };
+  const totalRow = aoa.length - 1;
+  for (let r = 1; r < aoa.length; r++) {
+    for (let c = 0; c < 16; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' }; // so empty cells still get borders
+      const cell = ws[addr];
+      const isHead = r <= 2, isTotal = r === totalRow;
+      const bold = isHead || isTotal || c === 12;
+      const hAlign = isHead || c === 0 || c === 2 ? 'center' : c === 1 || c === 15 ? 'left' : undefined;
+      cell.s = {
+        border,
+        alignment: { vertical: 'center', wrapText: isHead, ...(hAlign ? { horizontal: hAlign } : {}) },
+        ...(bold ? { font: { bold: true } } : {}),
+        ...(isHead || isTotal ? { fill: { fgColor: { rgb: 'F0EDE9' } } } : {}),
+      };
+      if (cell.t === 'n' && !isHead) cell.z = Number.isInteger(cell.v) ? '#,##0' : '#,##0.0#';
+    }
+  }
+  ws['A1'].s = { font: { bold: true, sz: 14 }, alignment: { horizontal: 'center', vertical: 'center' } };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'สรุปรายเดือน');
+  XLSX.writeFile(wb, safeFileName(title) + '.xlsx');
 }
 
 // strips characters Windows doesn't allow in file names

@@ -156,7 +156,12 @@ function distanceCorrectionMoney(r) {
   const factor = fieldFactor(r.workType || 'pile', r.fullClearRate) * (doubleFieldPay(r) ? 2 : 1);
   return (fieldRate(r.distanceKm) - fieldRate(r.originalDistanceKm)) * factor;
 }
-function wearRate(vehicle, rates, workType) { return workType === 'office' ? 0 : vehicle === 'car' ? (Number(rates.car) || 0) : vehicle === 'moto' ? (Number(rates.moto) || 0) : 0; }
+// rates.carByWorker: per-worker car rate overriding the default (e.g. the site supervisor's 380/day)
+function wearRate(vehicle, rates, workType, worker) {
+  if (workType === 'office') return 0;
+  if (vehicle === 'car') { const own = rates.carByWorker && rates.carByWorker[worker]; return Number(own != null ? own : rates.car) || 0; }
+  return vehicle === 'moto' ? (Number(rates.moto) || 0) : 0;
+}
 function vehicleTh(k) { const v = VEHICLES.find(v => v.key === k); return v ? v.label : k; }
 function num(n) { return (Number(n) || 0).toLocaleString('th-TH'); }
 
@@ -393,7 +398,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const myLeaveDays = myLeavesThisMonth.length;
   const myTotalPiles = mine.reduce((sum, r) => sum + r.items.reduce((s, it) => s + (Number(it.count) || 0), 0), 0);
   const myField = Object.values(myByDate).reduce((sum, r) => sum + fieldMoney(r), 0);
-  const myWear = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType), 0);
+  const myWear = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType, r.worker), 0);
   const myMoney = myField + myWear;
   const myLeavesInMonth = myLeaves.filter(l => l.date.slice(0, 7) === historyMonth);
   const historyItems = [
@@ -1460,7 +1465,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
     for (const r of mine) if (!byDate[r.date]) byDate[r.date] = r;
     const days = Object.keys(byDate).length;
     let money = 0;
-    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType) + fieldMoney(byDate[d]);
+    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType, byDate[d].worker) + fieldMoney(byDate[d]);
     const agg = {}; let total = 0;
     for (const r of mine) for (const it of r.items) {
       const k = r.site + '||' + it.pile;
@@ -1518,12 +1523,13 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
 function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
   const [month, setMonth] = useState(todayLocalMonth());
   const monthReports = reports.filter(r => r.date.slice(0, 7) === month);
+  const carByWorker = rates.carByWorker || {};
   const rows = workers.map(w => {
     const byDate = {};
     for (const r of monthReports) if (r.worker === w.nick && !byDate[r.date]) byDate[r.date] = r;
     const dates = Object.keys(byDate);
     let wear = 0, field = 0, toll = 0;
-    for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates, byDate[d].workType); field += fieldMoney(byDate[d]); toll += Number(byDate[d].tollFee) || 0; }
+    for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates, byDate[d].workType, byDate[d].worker); field += fieldMoney(byDate[d]); toll += Number(byDate[d].tollFee) || 0; }
     return { nick: w.nick, fullName: w.full_name, days: dates.length, wear, field, toll, money: wear + field };
   }).filter(c => c.days > 0);
   const grandTotal = rows.reduce((a, c) => a + c.money, 0);
@@ -1549,6 +1555,23 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>รถยนต์ <input type="number" min="0" value={rates.car} onChange={e => onSetRates({ ...rates, car: e.target.value })} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' }} /> บาท</label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>มอเตอร์ไซค์ <input type="number" min="0" value={rates.moto} onChange={e => onSetRates({ ...rates, moto: e.target.value })} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' }} /> บาท</label>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', margin: '14px 0 8px' }}>อัตรารถยนต์เฉพาะคน</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Object.keys(carByWorker).map(nick => {
+              const w = workers.find(w => w.nick === nick);
+              return (
+                <div key={nick} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, flexWrap: 'wrap' }}>
+                  <span style={{ minWidth: 120 }}>{w ? w.full_name + ' (' + nick + ')' : nick}</span>
+                  <input type="number" min="0" value={carByWorker[nick]} onChange={e => onSetRates({ ...rates, carByWorker: { ...carByWorker, [nick]: e.target.value } })} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' }} /> บาท
+                  <button onClick={() => { const next = { ...carByWorker }; delete next[nick]; onSetRates({ ...rates, carByWorker: next }); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+                </div>
+              );
+            })}
+            <select value="" onChange={e => e.target.value && onSetRates({ ...rates, carByWorker: { ...carByWorker, [e.target.value]: rates.car } })} style={{ ...inputStyle, width: 'auto', padding: '8px 10px', fontSize: 13 }}>
+              <option value="">+ เพิ่มพนักงานที่ได้อัตราพิเศษ</option>
+              {workers.filter(w => carByWorker[w.nick] == null).map(w => <option key={w.nick} value={w.nick}>{w.full_name} ({w.nick})</option>)}
+            </select>
           </div>
         </div>
         <div style={{ ...card, padding: '14px 18px' }}>
@@ -1937,7 +1960,7 @@ function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
     for (const r of Object.values(byDate)) {
       const fm = fieldMoney(r);
       if (fm > 0) { tierDays[TIERS.indexOf(fieldRate(r.distanceKm))] += fm / fieldRate(r.distanceKm); field += fm; }
-      const wr = wearRate(r.vehicle, rates, r.workType);
+      const wr = wearRate(r.vehicle, rates, r.workType, r.worker);
       if (wr > 0) { wear += wr; wearDays++; wearRates.add(wr); }
     }
     const { sundays, holidays } = countHolidayWork(mine);
@@ -2036,7 +2059,7 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
   for (const r of filtered) {
     const base = [r.date, workerLabel(r.worker), r.site, wtTh(r.workType)];
     const pays = payingReport[r.worker + '|' + r.date] === r;
-    const money = pays ? [r.distanceKm || '', r.distanceKm ? r.distanceKm * 2 : '', wearRate(r.vehicle, rates, r.workType), fieldMoney(r), Number(r.tollFee) || 0] : ['', '', '', '', ''];
+    const money = pays ? [r.distanceKm || '', r.distanceKm ? r.distanceKm * 2 : '', wearRate(r.vehicle, rates, r.workType, r.worker), fieldMoney(r), Number(r.tollFee) || 0] : ['', '', '', '', ''];
     const blankMoney = ['', '', '', '', ''];
     const hol = holidayOf(r.date);
     const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...money, r.note || '', hol ? hol.name : ''];
@@ -2164,7 +2187,9 @@ function App() {
       setMonthLocks(mRes.data || []);
       setFinishedSites(fRes.data || []);
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
-      setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100 });
+      let carByWorker = {};
+      try { carByWorker = JSON.parse(settings.rate_car_by_worker || '{}') || {}; } catch (e) { carByWorker = {}; }
+      setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100, carByWorker });
       let adminUsers = [];
       try { adminUsers = JSON.parse(settings.admin_users || '[]'); } catch (e) { adminUsers = []; }
       if (!Array.isArray(adminUsers)) adminUsers = [];
@@ -2299,7 +2324,7 @@ function App() {
   };
   const setRatesRemote = async (next) => {
     setRates(next);
-    await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }]);
+    await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
   };
   const saveAdmins = async (list) => {
     const { error } = await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(list) });
@@ -2355,7 +2380,7 @@ function App() {
   const openPrintReports = (filtered, filters) => {
     const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
     const rows = sorted.flatMap(r => {
-      const wear = wearRate(r.vehicle, rates, r.workType), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
+      const wear = wearRate(r.vehicle, rates, r.workType, r.worker), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: workerLabel(r.worker), site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
       if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
       // a report with several pile items becomes several rows here — the shared columns (date/site/
@@ -2371,7 +2396,7 @@ function App() {
     let wear = 0, field = 0, toll = 0, distanceRoundTrip = 0, fieldDays = 0;
     for (const k of Object.keys(byWorkerDate)) {
       const fm = fieldMoney(byWorkerDate[k]);
-      wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType);
+      wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType, byWorkerDate[k].worker);
       field += fm;
       toll += Number(byWorkerDate[k].tollFee) || 0;
       distanceRoundTrip += (Number(byWorkerDate[k].distanceKm) || 0) * 2; // ไป-กลับ, display only — money still uses one-way (ขาไป)

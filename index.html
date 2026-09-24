@@ -115,10 +115,13 @@ const COMPANY_HOLIDAYS_2026 = {
   '2026-12-05': 'วันพ่อแห่งชาติ',
   '2026-12-30': 'วันสิ้นปี', '2026-12-31': 'วันสิ้นปี',
 };
+// the live holiday list: loaded from field_settings.company_holidays (edited in the วันหยุดบริษัท
+// tab), falling back to the 2026 list above until someone saves one
+let companyHolidays = { ...COMPANY_HOLIDAYS_2026 };
 // { kind: 'holiday' | 'sunday', name } or null — a company holiday that falls on a Sunday counts as the holiday
 function holidayOf(iso) {
   if (!iso) return null;
-  if (COMPANY_HOLIDAYS_2026[iso]) return { kind: 'holiday', name: COMPANY_HOLIDAYS_2026[iso] };
+  if (companyHolidays[iso]) return { kind: 'holiday', name: companyHolidays[iso] };
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d).getDay() === 0 ? { kind: 'sunday', name: 'วันอาทิตย์' } : null;
 }
@@ -246,7 +249,7 @@ function allowedTabKeysFor(admin) {
 }
 
 function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, allowedTabKeys }) {
-  const adminTabs = [...ADMIN_TABS.filter(t => allowedTabKeys.includes(t.key)), { key: 'admins', label: 'จัดการผู้ใช้' }];
+  const adminTabs = [...ADMIN_TABS.filter(t => allowedTabKeys.includes(t.key)), { key: 'holidays', label: 'ปฏิทินวันหยุด' }, { key: 'admins', label: 'จัดการผู้ใช้' }];
   return (
     <div className="no-print" style={{ background: '#1b1d21', borderBottom: '3px solid #e8762d', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, minHeight: 58, position: 'sticky', top: 0, zIndex: 50 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={onHome}>
@@ -1520,6 +1523,116 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
   );
 }
 
+const WEEKDAYS_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+
+// company holiday calendar: which days are off (and count as วันหยุดบริษัท OT when worked), with
+// the next one called out; owners / month-confirmers can add or remove days
+function AdminHolidaysTab({ holidays, canEdit, onSave }) {
+  const today = todayLocalIso();
+  const years = [...new Set([...Object.keys(holidays).map(d => d.slice(0, 4)), today.slice(0, 4)])].sort();
+  const [year, setYear] = useState(today.slice(0, 4));
+  const [newDate, setNewDate] = useState('');
+  const [newName, setNewName] = useState('');
+  const dates = Object.keys(holidays).filter(d => d.startsWith(year)).sort();
+  const next = Object.keys(holidays).filter(d => d >= today).sort()[0];
+  const daysUntil = iso => { const [y, m, d] = iso.split('-').map(Number); const [ty, tm, td] = today.split('-').map(Number); return Math.round((new Date(y, m - 1, d) - new Date(ty, tm - 1, td)) / 86400000); };
+  const weekday = iso => { const [y, m, d] = iso.split('-').map(Number); return WEEKDAYS_TH[new Date(y, m - 1, d).getDay()]; };
+  const byMonth = {};
+  for (const d of dates) (byMonth[d.slice(5, 7)] = byMonth[d.slice(5, 7)] || []).push(d);
+  const add = () => {
+    if (!newDate || !newName.trim()) return alert('กรุณาเลือกวันที่และใส่ชื่อวันหยุด');
+    onSave({ ...holidays, [newDate]: newName.trim() });
+    setYear(newDate.slice(0, 4)); setNewDate(''); setNewName('');
+  };
+  const remove = d => {
+    if (!confirm('ลบวันหยุด ' + thDate(d) + ' (' + holidays[d] + ') ?')) return;
+    const nextList = { ...holidays }; delete nextList[d]; onSave(nextList);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>ปฏิทินวันหยุดบริษัท</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>ปี {Number(year) + 543} · {dates.length} วัน · ทำงานวันเหล่านี้นับเป็น "วันหยุดบริษัท" สำหรับคิดโอที (วันอาทิตย์นับแยก)</div>
+        </div>
+        <select value={year} onChange={e => setYear(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }}>
+          {years.map(y => <option key={y} value={y}>พ.ศ. {Number(y) + 543}</option>)}
+        </select>
+      </div>
+
+      {next && (
+        <div style={{ ...card, padding: '14px 18px', marginBottom: 18, borderLeft: '4px solid #e8762d' }}>
+          <div style={{ fontSize: 13, color: '#9a958d' }}>วันหยุดถัดไป</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginTop: 4 }}>
+            {holidays[next]} <span style={{ color: '#f0b98c' }}>· วัน{weekday(next)}ที่ {thDate(next)}</span>
+          </div>
+          <div style={{ fontSize: 14, color: '#c8c3bb', marginTop: 2 }}>{daysUntil(next) === 0 ? 'วันนี้' : 'อีก ' + daysUntil(next) + ' วัน'}</div>
+        </div>
+      )}
+
+      {canEdit && (
+        <div style={{ ...card, padding: '14px 18px', marginBottom: 18, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb' }}>เพิ่มวันหยุด</span>
+          <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }} />
+          <input placeholder="ชื่อวันหยุด เช่น วันปีใหม่" value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} style={{ ...inputStyle, width: 240, padding: '8px 10px' }} />
+          <button onClick={add} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่ม</button>
+        </div>
+      )}
+
+      {!dates.length && <div style={{ background: '#2c2f35', border: '1px dashed #4a4f58', borderRadius: 10, padding: '50px 20px', textAlign: 'center', color: '#9a958d', fontSize: 15 }}>ยังไม่มีวันหยุดของปีนี้{canEdit ? ' — เพิ่มได้จากช่องด้านบน' : ''}</div>}
+      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#9a958d', marginBottom: 10, flexWrap: 'wrap' }}>
+        <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#e8762d', verticalAlign: 'middle' }} /> วันหยุดบริษัท</span>
+        <span><span style={{ color: '#e88a7a', fontWeight: 700 }}>อา</span> วันอาทิตย์</span>
+        <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '2px solid #6dbf5b', verticalAlign: 'middle' }} /> วันนี้</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+        {MONTHS_TH.map((monthName, mi) => {
+          const mm = String(mi + 1).padStart(2, '0');
+          const firstDow = new Date(Number(year), mi, 1).getDay();
+          const nDays = new Date(Number(year), mi + 1, 0).getDate();
+          const cells = [...Array(firstDow).fill(null), ...Array.from({ length: nDays }, (_, i) => year + '-' + mm + '-' + String(i + 1).padStart(2, '0'))];
+          return (
+          <div key={mm} style={{ ...card, overflow: 'hidden' }}>
+            <div style={{ background: '#1b1d21', padding: '10px 16px', borderLeft: '4px solid ' + (byMonth[mm] ? '#e8762d' : '#3a3e45'), fontWeight: 800 }}>{monthName} {Number(year) + 543}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, padding: '8px 10px 4px', textAlign: 'center', fontSize: 12 }}>
+              {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((w, i) => <div key={w} style={{ color: i === 0 ? '#e88a7a' : '#9a958d', fontWeight: 700, padding: '2px 0' }}>{w}</div>)}
+              {cells.map((d, i) => {
+                if (!d) return <div key={'b' + i} />;
+                const hol = holidays[d], sun = i % 7 === 0;
+                return (
+                  <div key={d} title={hol || ''} style={{
+                    padding: '4px 0', borderRadius: 4, fontWeight: hol ? 800 : 400,
+                    background: hol ? '#e8762d' : 'transparent', color: hol ? '#1b1d21' : sun ? '#e88a7a' : '#c8c3bb',
+                    outline: d === today ? '2px solid #6dbf5b' : 'none', outlineOffset: -2, opacity: d < today && !hol ? 0.55 : 1,
+                  }}>{Number(d.slice(8))}</div>
+                );
+              })}
+            </div>
+            <div style={{ padding: '0 16px 8px' }}>
+              {(byMonth[mm] || []).map(d => {
+                const past = d < today;
+                return (
+                  <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px dotted #3a3e45', opacity: past ? 0.5 : 1 }}>
+                    <div style={{ width: 44, textAlign: 'center', flexShrink: 0 }}>
+                      <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1, color: d === next ? '#e8762d' : '#e9e6e1' }}>{Number(d.slice(8))}</div>
+                      <div style={{ fontSize: 11, color: '#9a958d' }}>{weekday(d)}</div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{holidays[d]}{past && <span style={{ fontSize: 11, color: '#9a958d' }}> · ผ่านแล้ว</span>}</div>
+                    {canEdit && <button onClick={() => remove(d)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          );
+        })}
+      </div>
+      {!canEdit && <div style={{ fontSize: 12, color: '#6b6f76', marginTop: 14 }}>เพิ่ม/ลบวันหยุดได้เฉพาะเจ้าของระบบหรือผู้ที่มีสิทธิ์ยืนยันเดือน</div>}
+    </div>
+  );
+}
+
 function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
   const [month, setMonth] = useState(todayLocalMonth());
   const monthReports = reports.filter(r => r.date.slice(0, 7) === month);
@@ -2163,6 +2276,7 @@ function App() {
   const [reports, setReports] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [rates, setRates] = useState({ car: 250, moto: 100 });
+  const [holidays, setHolidays] = useState({ ...COMPANY_HOLIDAYS_2026 });
   const [admins, setAdmins] = useState([]);
   const [monthLocks, setMonthLocks] = useState([]);
   const [finishedSites, setFinishedSites] = useState([]);
@@ -2211,6 +2325,10 @@ function App() {
       setMonthLocks(mRes.data || []);
       setFinishedSites(fRes.data || []);
       const settings = {}; (sRes.data || []).forEach(s => { settings[s.key] = s.value; });
+      if (settings.company_holidays) {
+        try { const h = JSON.parse(settings.company_holidays); if (h && typeof h === 'object') companyHolidays = h; } catch (e) { /* keep the built-in list */ }
+      }
+      setHolidays({ ...companyHolidays });
       let carByWorker = {};
       try { carByWorker = JSON.parse(settings.rate_car_by_worker || '{}') || {}; } catch (e) { carByWorker = {}; }
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100, carByWorker });
@@ -2346,6 +2464,12 @@ function App() {
     if (error) return alert('ลบไม่สำเร็จ: ' + error.message);
     await load();
   };
+  const saveHolidays = async (next) => {
+    const { error } = await DB.from('field_settings').upsert({ key: 'company_holidays', value: JSON.stringify(next) });
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return; }
+    companyHolidays = next; // holidayOf() reads this, so every OT count/export picks it up
+    setHolidays({ ...next });
+  };
   const setRatesRemote = async (next) => {
     setRates(next);
     await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
@@ -2441,7 +2565,7 @@ function App() {
   }
 
   const myAllowedTabs = allowedTabKeysFor(admins.find(a => a.name === adminName));
-  const effectiveTab = (myAllowedTabs.includes(tab) || tab === 'admins') ? tab : (myAllowedTabs[0] || 'reports');
+  const effectiveTab = (myAllowedTabs.includes(tab) || tab === 'admins' || tab === 'holidays') ? tab : (myAllowedTabs[0] || 'reports');
 
   return (
     <div style={{ minHeight: '100vh', background: '#23262b', color: '#e9e6e1' }}>
@@ -2473,7 +2597,8 @@ function App() {
           {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
           {effectiveTab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}
           {effectiveTab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
-          {effectiveTab === 'admins' && <AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
+          {effectiveTab === 'holidays' && <AdminHolidaysTab holidays={holidays} canEdit={(() => { const me = admins.find(a => a.name === adminName); return !!me && (me.role === 'owner' || !!me.canConfirmMonth); })()} onSave={saveHolidays} />}
+          {effectiveTab === 'admins' &&<AdminAdminsTab admins={admins} currentName={adminName} onAdd={addAdmin} onDelete={deleteAdmin} onEdit={editAdmin} />}
         </div>
       )}
     </div>

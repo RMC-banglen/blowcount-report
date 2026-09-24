@@ -1833,14 +1833,13 @@ function buildXlsxWorkbook(rows, sheetName, merges, colWidths) {
   }
   if (merges && merges.length) ws['!merges'] = merges;
   // vertically center everything so merged cells (date/worker on multi-item days) sit in the
-  // middle of their block instead of Excel's default bottom; merged cells and the header row are
-  // also centered horizontally
-  const mergedTopLeft = new Set((merges || []).map(m => m.s.r + ',' + m.s.c));
+  // middle of their block instead of Excel's default bottom; horizontally they keep the normal
+  // alignment like every other row — only the title/header rows are centered
   const headerRow = rows.length > 1 && rows[0].length === 1 ? 1 : 0; // print export has a title row first
   for (const addr of Object.keys(ws)) {
     if (addr[0] === '!') continue;
-    const { r, c } = XLSX.utils.decode_cell(addr);
-    const center = r === headerRow || mergedTopLeft.has(r + ',' + c);
+    const { r } = XLSX.utils.decode_cell(addr);
+    const center = r <= headerRow;
     const own = ws[addr].s || {}; // a cell passed in as an object may carry its own style (e.g. the total row)
     ws[addr].s = { alignment: { vertical: 'center', ...(center ? { horizontal: 'center' } : {}), ...own.alignment }, ...(r === headerRow || own.font ? { font: { bold: true, ...own.font } } : {}) };
   }

@@ -1823,7 +1823,8 @@ function buildXlsxWorkbook(rows, sheetName, merges, colWidths) {
     for (let c = 0; c < numCols; c++) {
       let maxLen = 8;
       for (const row of rows) {
-        const len = row[c] == null ? 0 : String(row[c]).length;
+        const val = row[c] && typeof row[c] === 'object' ? row[c].v : row[c];
+        const len = val == null ? 0 : String(val).length;
         if (len > maxLen) maxLen = len;
       }
       cols.push({ wch: Math.min(maxLen + 2, 50) });
@@ -1840,7 +1841,8 @@ function buildXlsxWorkbook(rows, sheetName, merges, colWidths) {
     if (addr[0] === '!') continue;
     const { r, c } = XLSX.utils.decode_cell(addr);
     const center = r === headerRow || mergedTopLeft.has(r + ',' + c);
-    ws[addr].s = { alignment: { vertical: 'center', ...(center ? { horizontal: 'center' } : {}) }, ...(r === headerRow ? { font: { bold: true } } : {}) };
+    const own = ws[addr].s || {}; // a cell passed in as an object may carry its own style (e.g. the total row)
+    ws[addr].s = { alignment: { vertical: 'center', ...(center ? { horizontal: 'center' } : {}), ...own.alignment }, ...(r === headerRow || own.font ? { font: { bold: true, ...own.font } } : {}) };
   }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1');
@@ -1957,6 +1959,18 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
       k = m + 1;
     }
     i = j + 1;
+  }
+
+  // grand-total row: live SUM formulas for ค่าสึกหรอ / ค่าออกสนาม / ค่าทางด่วน (M/N/O)
+  if (dataRows.length) {
+    const last = rows.length; // 1-based Excel row of the last data row
+    const total = new Array(rows[0].length).fill('');
+    total[11] = { v: 'รวม', t: 's', s: { font: { bold: true }, alignment: { horizontal: 'right' } } };
+    for (const [c, col] of [[12, 'M'], [13, 'N'], [14, 'O']]) {
+      const v = rows.slice(1).reduce((s, row) => s + (typeof row[c] === 'number' ? row[c] : 0), 0);
+      total[c] = { t: 'n', v, f: 'SUM(' + col + '2:' + col + last + ')', s: { font: { bold: true } } };
+    }
+    rows.push(total);
   }
   return { rows, merges };
 }

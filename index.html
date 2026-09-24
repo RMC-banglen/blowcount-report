@@ -1968,9 +1968,10 @@ function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
     seq++;
     aoa.push([
       seq, w.full_name, w.nick, ...tierDays.map(d => d || ''),
-      n(field, 'D' + x + '*70+E' + x + '*120+F' + x + '*170+G' + x + '*220'),
+      // N() treats the blank ('' text) cells as 0 — plain D4*70 gives #VALUE! on a blank tier/หักเงิน
+      n(field, 'N(D' + x + ')*70+N(E' + x + ')*120+N(F' + x + ')*170+N(G' + x + ')*220'),
       wearDays || '', wearRates.size === 1 ? [...wearRates][0] : '', n(wear),
-      '', n(field + wear, 'H' + x + '+K' + x + '-L' + x),
+      '', n(field + wear, 'N(H' + x + ')+N(K' + x + ')-N(L' + x + ')'),
       sundays || '', holidays || '', '',
     ]);
   }

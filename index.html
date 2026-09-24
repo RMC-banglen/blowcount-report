@@ -1840,6 +1840,8 @@ function buildXlsxWorkbook(rows, sheetName, merges, colWidths) {
     if (addr[0] === '!') continue;
     const { r } = XLSX.utils.decode_cell(addr);
     const center = r <= headerRow;
+    // thousands separator on numbers (money totals etc.); keep decimals only when there are some
+    if (ws[addr].t === 'n') ws[addr].z = Number.isInteger(ws[addr].v) ? '#,##0' : '#,##0.0#';
     const own = ws[addr].s || {}; // a cell passed in as an object may carry its own style (e.g. the total row)
     ws[addr].s = { alignment: { vertical: 'center', ...(center ? { horizontal: 'center' } : {}), ...own.alignment }, ...(r === headerRow || own.font ? { font: { bold: true, ...own.font } } : {}) };
   }

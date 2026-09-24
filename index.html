@@ -1866,7 +1866,8 @@ function exportPrintReportsXlsx(rows, totals, includeCost, subtitle) {
 }
 
 function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
-  downloadXlsx(buildExportRows(filtered, reports, rates, leaves, workers), 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน');
+  const { rows, merges } = buildExportRows(filtered, reports, rates, leaves, workers);
+  downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', merges);
 }
 
 // one .xlsx per worker (named after them), bundled into a single .zip so the browser
@@ -1879,7 +1880,8 @@ async function exportXlsxPerWorker(filtered, reports, rates, leaves, workers, pe
     const wReports = filtered.filter(r => r.worker === w.nick);
     const wLeaves = leaves.filter(l => l.worker === w.nick);
     if (!wReports.length && !wLeaves.length) continue;
-    const wb = buildXlsxWorkbook(buildExportRows(wReports, reports, rates, wLeaves, workers), 'รายงาน');
+    const { rows, merges } = buildExportRows(wReports, reports, rates, wLeaves, workers);
+    const wb = buildXlsxWorkbook(rows, 'รายงาน', merges);
     zip.file(safe('รายงานตอกเสาเข็ม_' + w.full_name + ' (' + w.nick + ')_' + periodLabel) + '.xlsx', XLSX.write(wb, { bookType: 'xlsx', type: 'array' }));
     count++;
   }
@@ -1908,16 +1910,43 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
     const blankMoney = ['', '', '', '', ''];
     const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...money, r.note || ''];
     const extraTail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...blankMoney, r.note || ''];
-    if (r.items.length) r.items.forEach((it, idx) => dataRows.push({ date: r.date, sortId: r.id, row: [...base, it.pile, it.count, cumFor(reports, r.site, it.pile, r.date, null), ...(idx === 0 ? tail : extraTail)] }));
-    else dataRows.push({ date: r.date, sortId: r.id, row: [...base, '', '', '', ...tail] });
+    const meta = { date: r.date, worker: r.worker, sortId: r.id, reportId: r.id };
+    if (r.items.length) r.items.forEach((it, idx) => dataRows.push({ ...meta, row: [...base, it.pile, it.count, cumFor(reports, r.site, it.pile, r.date, null), ...(idx === 0 ? tail : extraTail)] }));
+    else dataRows.push({ ...meta, row: [...base, '', '', '', ...tail] });
   }
   for (const l of leaves) {
     const note = [sundaySwapNote(l.leaveType, l.date), l.reason].filter(Boolean).join(' / ');
-    dataRows.push({ date: l.date, sortId: l.id, row: [l.date, workerLabel(l.worker), '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', '', 0, 0, 0, note] });
+    dataRows.push({ date: l.date, worker: l.worker, sortId: l.id, reportId: null, row: [l.date, workerLabel(l.worker), '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', '', 0, 0, 0, note] });
   }
-  dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.sortId - b.sortId);
+  // worker as a tiebreak keeps one worker's rows for a day adjacent so they can be merged
+  dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.worker.localeCompare(b.worker) || a.sortId - b.sortId);
   for (const d of dataRows) rows.push(d.row);
-  return rows;
+
+  // several rows for the same worker+day (multiple pile items, or two reports) get their shared
+  // cells merged — date/worker always; site/type/time/vehicle/money/note only within one report
+  const merges = [];
+  const mergeRun = (from, to, cols) => {
+    if (to <= from) return;
+    for (const c of cols) {
+      merges.push({ s: { r: from + 1, c }, e: { r: to + 1, c } }); // +1 for the header row
+      for (let i = from + 1; i <= to; i++) rows[i + 1][c] = '';
+    }
+  };
+  const REPORT_COLS = [2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  for (let i = 0; i < dataRows.length;) {
+    const d = dataRows[i];
+    let j = i;
+    if (d.reportId != null) while (j + 1 < dataRows.length && dataRows[j + 1].reportId != null && dataRows[j + 1].worker === d.worker && dataRows[j + 1].date === d.date) j++;
+    mergeRun(i, j, [0, 1]);
+    for (let k = i; k <= j;) {
+      let m = k;
+      while (m + 1 <= j && dataRows[m + 1].reportId === dataRows[k].reportId) m++;
+      mergeRun(k, m, REPORT_COLS);
+      k = m + 1;
+    }
+    i = j + 1;
+  }
+  return { rows, merges };
 }
 
 function App() {

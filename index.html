@@ -99,26 +99,41 @@ function sundaySwapNote(leaveType, iso) {
   return 'สลับวันหยุดจากวันอาทิตย์ที่ ' + thDate(sunIso) + ' มาเป็นวันนี้ (' + thDate(iso) + ' ' + ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'][dow] + ')';
 }
 
-// company holiday calendar (พ.ศ. 2569 / ค.ศ. 2026) — Sundays and these dates pay ค่าออกสนาม x2
-const COMPANY_HOLIDAYS_2026 = [
-  '2026-01-01', '2026-01-02', '2026-01-03', // วันปีใหม่
-  '2026-02-16', '2026-02-17', // วันตรุษจีน
-  '2026-03-03', // วันมาฆบูชา
-  '2026-04-11', '2026-04-12', '2026-04-13', '2026-04-14', '2026-04-15', '2026-04-16', // วันสงกรานต์
-  '2026-05-01', // วันแรงงาน
-  '2026-06-03', // วันเฉลิมพระชนมพรรษาสมเด็จพระราชินี
-  '2026-07-28', // วันเฉลิมพระชนมพรรษา พระบาทสมเด็จพระเจ้าอยู่หัว
-  '2026-07-29', // วันอาสาฬหบูชา
-  '2026-08-12', // วันแม่แห่งชาติ
-  '2026-10-13', // วันคล้ายวันสวรรคต รัชกาลที่ 9
-  '2026-12-05', // วันพ่อแห่งชาติ
-  '2026-12-30', '2026-12-31', // วันสิ้นปี
-];
-function isDoubleFieldPayDate(iso) {
-  if (!iso) return false;
+// company holiday calendar (พ.ศ. 2569 / ค.ศ. 2026). Working on a Sunday or one of these days no
+// longer doubles ค่าออกสนาม — the days are counted instead so accounting can pay OT separately
+const COMPANY_HOLIDAYS_2026 = {
+  '2026-01-01': 'วันปีใหม่', '2026-01-02': 'วันปีใหม่', '2026-01-03': 'วันปีใหม่',
+  '2026-02-16': 'วันตรุษจีน', '2026-02-17': 'วันตรุษจีน',
+  '2026-03-03': 'วันมาฆบูชา',
+  '2026-04-11': 'วันสงกรานต์', '2026-04-12': 'วันสงกรานต์', '2026-04-13': 'วันสงกรานต์', '2026-04-14': 'วันสงกรานต์', '2026-04-15': 'วันสงกรานต์', '2026-04-16': 'วันสงกรานต์',
+  '2026-05-01': 'วันแรงงาน',
+  '2026-06-03': 'วันเฉลิมฯ พระราชินี',
+  '2026-07-28': 'วันเฉลิมฯ ร.10',
+  '2026-07-29': 'วันอาสาฬหบูชา',
+  '2026-08-12': 'วันแม่แห่งชาติ',
+  '2026-10-13': 'วันคล้ายวันสวรรคต ร.9',
+  '2026-12-05': 'วันพ่อแห่งชาติ',
+  '2026-12-30': 'วันสิ้นปี', '2026-12-31': 'วันสิ้นปี',
+};
+// { kind: 'holiday' | 'sunday', name } or null — a company holiday that falls on a Sunday counts as the holiday
+function holidayOf(iso) {
+  if (!iso) return null;
+  if (COMPANY_HOLIDAYS_2026[iso]) return { kind: 'holiday', name: COMPANY_HOLIDAYS_2026[iso] };
   const [y, m, d] = iso.split('-').map(Number);
-  const dow = new Date(y, m - 1, d).getDay();
-  return dow === 0 || COMPANY_HOLIDAYS_2026.includes(iso);
+  return new Date(y, m - 1, d).getDay() === 0 ? { kind: 'sunday', name: 'วันอาทิตย์' } : null;
+}
+// days a set of reports was worked on a Sunday / company holiday (one per worker+date), for OT
+function countHolidayWork(reports) {
+  const seen = new Set(); let sundays = 0, holidays = 0;
+  for (const r of reports) {
+    const k = r.worker + '|' + r.date;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const h = holidayOf(r.date);
+    if (h && h.kind === 'sunday') sundays++;
+    else if (h) holidays++;
+  }
+  return { sundays, holidays };
 }
 function fieldRate(km) {
   km = Number(km) || 0;
@@ -131,8 +146,8 @@ function fieldRate(km) {
 // fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
 // usual 50% for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
 function fieldFactor(workType, fullClearRate) { return workType === 'clear' ? (fullClearRate ? 1 : 0.5) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
-// double pay applies once (not stacked) whether it's from a holiday/Sunday or from running 2 rigs
-function doubleFieldPay(r) { return isDoubleFieldPayDate(r.date) || !!r.dualRig; }
+// running 2 rigs doubles ค่าออกสนาม (Sundays/holidays don't — see countHolidayWork)
+function doubleFieldPay(r) { return !!r.dualRig; }
 function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate) * (doubleFieldPay(r) ? 2 : 1); }
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
@@ -347,7 +362,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate) * (isDoubleFieldPayDate(f.date) || f.dualRig ? 2 : 1);
+  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate) * (f.dualRig ? 2 : 1);
   const sitePiles = f.site.trim()
     ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
     : [];
@@ -625,7 +640,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
               <button onClick={addLeg} style={{ marginTop: 8, background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', width: '100%' }}>+ เพิ่มระยะทาง (กรณีไปหน้างานอื่นต่อในเส้นทางเดียวกัน — นับขาไปอย่างเดียว)</button>
               {(totalKm > 0 || f.distanceLegs.length > 1) && (
                 <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c', marginTop: 10 }}>
-                  รวมระยะทาง <b>{num(totalKm)}</b> กม.{fieldPreviewVal > 0 && <> · ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท{(isDoubleFieldPayDate(f.date) || f.dualRig) && <span style={{ color: '#e8762d' }}> ({isDoubleFieldPayDate(f.date) ? 'วันหยุด' : 'คุมปั่นจั่น 2 ตัว'} x2)</span>}</>}
+                  รวมระยะทาง <b>{num(totalKm)}</b> กม.{fieldPreviewVal > 0 && <> · ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(fieldPreviewVal)}</b> บาท{f.dualRig && <span style={{ color: '#e8762d' }}> (คุมปั่นจั่น 2 ตัว x2)</span>}</>}{holidayOf(f.date) && <span style={{ color: '#e8762d' }}> · ทำงาน{holidayOf(f.date).name}</span>}
                 </div>
               )}
               <label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
@@ -1452,7 +1467,8 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
       agg[k] = (agg[k] || 0) + (Number(it.count) || 0);
       total += Number(it.count) || 0;
     }
-    return { nick: w.nick, fullName: w.full_name, days, total, money, rows: Object.keys(agg).sort().map(k => { const [site, pile] = k.split('||'); return { site, pile, count: agg[k] }; }) };
+    const { sundays, holidays } = countHolidayWork(mine);
+    return { nick: w.nick, fullName: w.full_name, days, total, money, sundays, holidays, rows: Object.keys(agg).sort().map(k => { const [site, pile] = k.split('||'); return { site, pile, count: agg[k] }; }) };
   }).filter(Boolean);
   const [y, m] = month.split('-').map(Number);
   const monthTh = MONTHS_TH[m - 1] + ' ' + (y + 543);
@@ -1477,6 +1493,8 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
               <div style={{ fontWeight: 800, fontSize: 16 }}>{m.nick} <span style={{ color: '#9a958d', fontWeight: 500, fontSize: 13 }}>{m.fullName}</span></div>
               <div style={{ display: 'flex', gap: 18, fontSize: 13, color: '#c8c3bb', flexWrap: 'wrap' }}>
                 <span>ทำงาน <b style={{ color: '#e9e6e1' }}>{m.days}</b> วัน</span>
+                <span>ทำงานวันอาทิตย์ <b style={{ color: '#e9e6e1' }}>{m.sundays}</b> วัน</span>
+                <span>ทำงานวันหยุดบริษัท <b style={{ color: '#e9e6e1' }}>{m.holidays}</b> วัน</span>
                 <span>ตอกรวม <b style={{ color: '#f0b98c', fontSize: 15 }}>{num(m.total)}</b> ต้น</span>
                 <span>ค่ารถ <b style={{ color: '#f0b98c' }}>{num(m.money)}</b> บาท</span>
               </div>
@@ -1690,6 +1708,8 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, fileName, onClo
             <thead>
               <tr style={{ background: '#f0ede9' }}>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ออกสนาม (วัน)</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ทำงานวันอาทิตย์ (วัน)</th>
+                <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ทำงานวันหยุดบริษัท (วัน)</th>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ระยะทางไป-กลับรวม (กม.)</th>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าสึกหรอ (บาท)</th>
                 <th style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>ค่าออกสนาม (บาท)</th>
@@ -1700,6 +1720,8 @@ function PrintReportsView({ rows, subtitle, totals, includeCost, fileName, onClo
             <tbody>
               <tr>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.fieldDays)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.sundays)}</td>
+                <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.holidays)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.distanceRoundTrip)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.wear)}</td>
                 <td style={{ border: '1px solid #ccc', padding: '6px 10px', textAlign: 'right' }}>{num(totals.field)}</td>
@@ -1742,7 +1764,7 @@ function PrintMonthlyView({ rows, monthTh, onClose }) {
           <div key={m.nick} style={{ marginBottom: 16, breakInside: 'avoid' }}>
             <div style={{ background: '#f0ede9', borderLeft: '4px solid #e8762d', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', fontSize: 13 }}>
               <b>{m.nick} {m.fullName}</b>
-              <span>ทำงาน {m.days} วัน · ตอกรวม <b>{num(m.total)}</b> ต้น · ค่ารถ <b>{num(m.money)}</b> บาท</span>
+              <span>ทำงาน {m.days} วัน · วันอาทิตย์ <b>{m.sundays}</b> วัน · วันหยุดบริษัท <b>{m.holidays}</b> วัน · ตอกรวม <b>{num(m.total)}</b> ต้น · ค่ารถ <b>{num(m.money)}</b> บาท</span>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <tbody>
@@ -1876,8 +1898,8 @@ function exportPrintReportsXlsx(rows, totals, includeCost, subtitle, fileName = 
   merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } });
   if (includeCost && totals) {
     out.push([]);
-    out.push(['ออกสนาม (วัน)', 'ระยะทางไป-กลับรวม (กม.)', 'ค่าสึกหรอ (บาท)', 'ค่าออกสนาม (บาท)', 'รวม (บาท)', 'รวมค่าทางด่วน (บาท)']);
-    out.push([totals.fieldDays, totals.distanceRoundTrip, totals.wear, totals.field, totals.money, totals.toll]);
+    out.push(['ออกสนาม (วัน)', 'ทำงานวันอาทิตย์ (วัน)', 'ทำงานวันหยุดบริษัท (วัน)', 'ระยะทางไป-กลับรวม (กม.)', 'ค่าสึกหรอ (บาท)', 'ค่าออกสนาม (บาท)', 'รวม (บาท)', 'รวมค่าทางด่วน (บาท)']);
+    out.push([totals.fieldDays, totals.sundays, totals.holidays, totals.distanceRoundTrip, totals.wear, totals.field, totals.money, totals.toll]);
   }
   // column proportions matching PrintReportsView (date/count/cum/time narrow, name/site/pile wide)
   const colWidths = [12, 26, 22, 30, 8, 8, 12, 20];
@@ -1919,7 +1941,7 @@ async function exportXlsxPerWorker(filtered, reports, rates, leaves, workers, pe
 
 function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
-  const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ระยะทางไป-กลับ(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ']];
+  const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ระยะทางไป-กลับ(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ', 'ทำงานวันหยุด']];
   const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
   const dataRows = [];
   // money is paid once per worker+date (same rule as openPrintReports' totals) — extra pile items or a
@@ -1931,15 +1953,16 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
     const pays = payingReport[r.worker + '|' + r.date] === r;
     const money = pays ? [r.distanceKm || '', r.distanceKm ? r.distanceKm * 2 : '', wearRate(r.vehicle, rates, r.workType), fieldMoney(r), Number(r.tollFee) || 0] : ['', '', '', '', ''];
     const blankMoney = ['', '', '', '', ''];
-    const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...money, r.note || ''];
-    const extraTail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...blankMoney, r.note || ''];
+    const hol = holidayOf(r.date);
+    const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...money, r.note || '', hol ? hol.name : ''];
+    const extraTail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...blankMoney, r.note || '', hol ? hol.name : ''];
     const meta = { date: r.date, worker: r.worker, sortId: r.id, reportId: r.id };
     if (r.items.length) r.items.forEach((it, idx) => dataRows.push({ ...meta, row: [...base, it.pile, it.count, cumFor(reports, r.site, it.pile, r.date, null), ...(idx === 0 ? tail : extraTail)] }));
     else dataRows.push({ ...meta, row: [...base, '', '', '', ...tail] });
   }
   for (const l of leaves) {
     const note = [sundaySwapNote(l.leaveType, l.date), l.reason].filter(Boolean).join(' / ');
-    dataRows.push({ date: l.date, worker: l.worker, sortId: l.id, reportId: null, row: [l.date, workerLabel(l.worker), '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', '', 0, 0, 0, note] });
+    dataRows.push({ date: l.date, worker: l.worker, sortId: l.id, reportId: null, row: [l.date, workerLabel(l.worker), '', leaveTypeTh(l.leaveType), '', '', '', '', '', '', '', '', 0, 0, 0, note, ''] });
   }
   // worker as a tiebreak keeps one worker's rows for a day adjacent so they can be merged
   dataRows.sort((a, b) => a.date.localeCompare(b.date) || a.worker.localeCompare(b.worker) || a.sortId - b.sortId);
@@ -1960,7 +1983,7 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
     const d = dataRows[i];
     let j = i;
     if (d.reportId != null) while (j + 1 < dataRows.length && dataRows[j + 1].reportId != null && dataRows[j + 1].worker === d.worker && dataRows[j + 1].date === d.date) j++;
-    mergeRun(i, j, [0, 1]);
+    mergeRun(i, j, [0, 1, 16]);
     for (let k = i; k <= j;) {
       let m = k;
       while (m + 1 <= j && dataRows[m + 1].reportId === dataRows[k].reportId) m++;
@@ -1980,6 +2003,16 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
       total[c] = { t: 'n', v, f: 'SUM(' + col + '2:' + col + last + ')', s: { font: { bold: true } } };
     }
     rows.push(total);
+
+    // days worked on Sundays / company holidays, per worker — accounting pays OT from these
+    const bold = v => ({ v, t: 's', s: { font: { bold: true } } });
+    rows.push([]);
+    // (starts in the wide พนักงาน column so the narrow date column isn't stretched)
+    rows.push(['', bold('วันทำงานวันหยุด (คิดโอที)'), bold('ทำงานวันอาทิตย์ (วัน)'), bold('ทำงานวันหยุดบริษัท (วัน)')]);
+    for (const nick of [...new Set(filtered.map(r => r.worker))]) {
+      const { sundays, holidays } = countHolidayWork(filtered.filter(r => r.worker === nick));
+      rows.push(['', workerLabel(nick), sundays, holidays]);
+    }
   }
   return { rows, merges };
 }
@@ -2252,7 +2285,7 @@ function App() {
       distanceRoundTrip += (Number(byWorkerDate[k].distanceKm) || 0) * 2; // ไป-กลับ, display only — money still uses one-way (ขาไป)
       if (fm > 0) fieldDays++;
     }
-    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, fileName: filters.exportName, totals: { wear, field, toll, money: wear + field, distanceRoundTrip, fieldDays } });
+    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, fileName: filters.exportName, totals: { wear, field, toll, money: wear + field, distanceRoundTrip, fieldDays, ...countHolidayWork(filtered) } });
   };
   const openPrintMonthly = (rows, monthTh) => setPrintPayload({ kind: 'monthly', rows: rows.map(r => ({ ...r, total: r.total })), monthTh });
   const openPrintCar = (rows, grandTotal, monthTh) => setPrintPayload({ kind: 'car', rows, grandTotal, monthTh });

@@ -2003,6 +2003,13 @@ function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
       total[c] = { t: 'n', v, f: 'SUM(' + col + '2:' + col + last + ')', s: { font: { bold: true } } };
     }
     rows.push(total);
+    // ค่าสึกหรอ + ค่าออกสนาม as one figure, merged across M:N under the two totals
+    const t = rows.length; // 1-based Excel row of the total row
+    const grand = new Array(rows[0].length).fill('');
+    grand[11] = { v: 'รวมเป็นเงิน', t: 's', s: { font: { bold: true }, alignment: { horizontal: 'right' } } };
+    grand[12] = { t: 'n', v: total[12].v + total[13].v, f: 'M' + t + '+N' + t, s: { font: { bold: true }, alignment: { horizontal: 'center' } } };
+    rows.push(grand);
+    merges.push({ s: { r: t, c: 12 }, e: { r: t, c: 13 } });
 
     // days worked on Sundays / company holidays, per worker — accounting pays OT from these
     const bold = v => ({ v, t: 's', s: { font: { bold: true } } });

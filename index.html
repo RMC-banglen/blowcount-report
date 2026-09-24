@@ -1162,6 +1162,11 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
   if (monthTo) displayItems = displayItems.filter(x => x.date <= monthTo);
   displayItems.sort((a, b) => b.date.localeCompare(a.date) || b.sortId - a.sortId);
 
+  // export file name follows the filters, e.g. รายงานตอกเสาเข็ม_นายศักดิ์ดา มิ่งละกุล (เกมส์)_สิงหาคม 2569
+  const [fyy, fmm] = filterMonth ? filterMonth.split('-').map(Number) : [];
+  const periodLabel = filterMonth ? MONTHS_TH[fmm - 1] + ' ' + (fyy + 543) : 'ทุกเดือน';
+  const exportName = ['รายงานตอกเสาเข็ม', filterWorker && workerLabel(filterWorker), filterSite, periodLabel].filter(Boolean).join('_');
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
@@ -1186,9 +1191,9 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
             })}
           </select>
           <button onClick={() => { setFilterWorker(''); setFilterSite(''); setFilterMonth(currentMonth); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>ล้าง</button>
-          <button onClick={() => onExportCsv(filtered, filteredLeaves)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
-          <button onClick={() => { const [yy, mm] = filterMonth ? filterMonth.split('-').map(Number) : []; onExportPerWorker(filtered, filteredLeaves, filterMonth ? MONTHS_TH[mm - 1] + ' ' + (yy + 543) : 'ทุกเดือน'); }} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Excel แยกรายคน</button>
-          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
+          <button onClick={() => onExportCsv(filtered, filteredLeaves, exportName)}style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Export Excel</button>
+          <button onClick={() => onExportPerWorker(filtered, filteredLeaves, periodLabel)} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Excel แยกรายคน</button>
+          <button onClick={() => onPrint(filtered, { filterWorker, filterSite, filterDateFrom: monthFrom, filterDateTo: monthTo, includeCost, exportName })} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', padding: '0 4px' }}>
             <input type="checkbox" checked={includeCost} onChange={e => setIncludeCost(e.target.checked)} style={{ width: 16, height: 16 }} />
             พิมพ์ PDF รวมค่ารถ
@@ -1627,12 +1632,12 @@ function AdminLeavesTab({ workers, leaves, onDelete }) {
   );
 }
 
-function PrintReportsView({ rows, subtitle, totals, includeCost, onClose }) {
+function PrintReportsView({ rows, subtitle, totals, includeCost, fileName, onClose }) {
   return (
     <div style={{ background: '#ffffff', minHeight: '100vh', color: '#1a1a1a' }}>
       <div className="no-print" style={{ maxWidth: 900, margin: '0 auto', padding: '16px 24px 0', display: 'flex', gap: 10 }}>
         <button onClick={() => window.print()} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 6, padding: '11px 22px', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>🖨 พิมพ์ / บันทึก PDF</button>
-        <button onClick={() => exportPrintReportsXlsx(rows, totals, includeCost, subtitle)} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '11px 18px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>↓ Export Excel</button>
+        <button onClick={() => exportPrintReportsXlsx(rows, totals, includeCost, subtitle, fileName)} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '11px 18px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>↓ Export Excel</button>
         <button onClick={onClose} style={{ background: 'none', border: '1px solid #bbb', color: '#555', borderRadius: 6, padding: '11px 18px', fontSize: 14, cursor: 'pointer' }}>← กลับ</button>
       </div>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
@@ -1852,7 +1857,7 @@ function buildXlsxWorkbook(rows, sheetName, merges, colWidths) {
 
 // mirrors PrintReportsView's own rows/totals (rowSpan/isFirst already computed there) into a
 // downloadable .xlsx with the same merged-cell layout, instead of recomputing from raw reports
-function exportPrintReportsXlsx(rows, totals, includeCost, subtitle) {
+function exportPrintReportsXlsx(rows, totals, includeCost, subtitle, fileName = 'รายงานตอกเสาเข็ม') {
   const header = ['วันที่', 'พนักงาน', 'หน่วยงาน', 'ชนิดเสา / ลักษณะงาน', 'จำนวน', 'สะสม', 'เวลา', 'รถ / ระยะทาง'];
   if (includeCost) header.push('ค่าสึกหรอ', 'ค่าออกสนาม', 'รวม', 'ค่าทางด่วน');
   const out = [[subtitle], header];
@@ -1877,18 +1882,21 @@ function exportPrintReportsXlsx(rows, totals, includeCost, subtitle) {
   // column proportions matching PrintReportsView (date/count/cum/time narrow, name/site/pile wide)
   const colWidths = [12, 26, 22, 30, 8, 8, 12, 20];
   if (includeCost) colWidths.push(10, 10, 10, 10);
-  downloadXlsx(out, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', merges, colWidths);
+  downloadXlsx(out, safeFileName(fileName) + '.xlsx', 'รายงาน', merges, colWidths);
 }
 
-function exportCsv(filtered, reports, rates, leaves = [], workers = []) {
+// strips characters Windows doesn't allow in file names
+function safeFileName(s) { return String(s).replace(/[\\/:*?"<>|]/g, '_').trim(); }
+
+function exportCsv(filtered, reports, rates, leaves = [], workers = [], fileName = 'รายงานตอกเสาเข็ม') {
   const { rows, merges } = buildExportRows(filtered, reports, rates, leaves, workers);
-  downloadXlsx(rows, 'รายงานตอกเสาเข็ม.xlsx', 'รายงาน', merges);
+  downloadXlsx(rows, safeFileName(fileName) + '.xlsx', 'รายงาน', merges);
 }
 
 // one .xlsx per worker (named after them), bundled into a single .zip so the browser
 // doesn't block a burst of separate downloads
 async function exportXlsxPerWorker(filtered, reports, rates, leaves, workers, periodLabel) {
-  const safe = s => String(s).replace(/[\\/:*?"<>|]/g, '_').trim();
+  const safe = safeFileName;
   const zip = new JSZip();
   let count = 0;
   for (const w of workers) {
@@ -2215,7 +2223,7 @@ function App() {
     return ok;
   };
 
-  const doExportCsv = (filtered, filteredLeaves) => exportCsv(filtered, reports, rates, filteredLeaves, workers);
+  const doExportCsv = (filtered, filteredLeaves, fileName) => exportCsv(filtered, reports, rates, filteredLeaves, workers, fileName);
   const doExportPerWorker = (filtered, filteredLeaves, periodLabel) => exportXlsxPerWorker(filtered, reports, rates, filteredLeaves, workers, periodLabel);
 
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
@@ -2244,7 +2252,7 @@ function App() {
       distanceRoundTrip += (Number(byWorkerDate[k].distanceKm) || 0) * 2; // ไป-กลับ, display only — money still uses one-way (ขาไป)
       if (fm > 0) fieldDays++;
     }
-    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, totals: { wear, field, toll, money: wear + field, distanceRoundTrip, fieldDays } });
+    setPrintPayload({ kind: 'reports', rows, subtitle, includeCost: !!filters.includeCost, fileName: filters.exportName, totals: { wear, field, toll, money: wear + field, distanceRoundTrip, fieldDays } });
   };
   const openPrintMonthly = (rows, monthTh) => setPrintPayload({ kind: 'monthly', rows: rows.map(r => ({ ...r, total: r.total })), monthTh });
   const openPrintCar = (rows, grandTotal, monthTh) => setPrintPayload({ kind: 'car', rows, grandTotal, monthTh });
@@ -2253,7 +2261,7 @@ function App() {
   if (loadError) return <div style={{ padding: 40, color: '#f0b3a8' }}>{loadError}</div>;
 
   if (printPayload) {
-    if (printPayload.kind === 'reports') return <PrintReportsView rows={printPayload.rows} subtitle={printPayload.subtitle} totals={printPayload.totals} includeCost={printPayload.includeCost} onClose={() => setPrintPayload(null)} />;
+    if (printPayload.kind === 'reports') return <PrintReportsView rows={printPayload.rows} subtitle={printPayload.subtitle} totals={printPayload.totals} includeCost={printPayload.includeCost} fileName={printPayload.fileName} onClose={() => setPrintPayload(null)} />;
     if (printPayload.kind === 'monthly') return <PrintMonthlyView rows={printPayload.rows} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
     if (printPayload.kind === 'car') return <PrintCarView rows={printPayload.rows} grandTotal={printPayload.grandTotal} monthTh={printPayload.monthTh} onClose={() => setPrintPayload(null)} />;
   }

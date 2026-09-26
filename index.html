@@ -138,26 +138,38 @@ function countHolidayWork(reports) {
   }
   return { sundays, holidays };
 }
-function fieldRate(km) {
-  km = Number(km) || 0;
-  if (km <= 0) return 0;
-  if (km <= 80) return 70;
-  if (km <= 100) return 120;
-  if (km <= 150) return 170;
-  return 220;
+// ค่าออกสนาม rate schedule: each entry applies from its month (YYYY-MM) until the next one, so
+// changing rates never rewrites months already paid. limits = upper km of the first 3 tiers,
+// amounts = baht/day for the 4 tiers, clearPct = % paid for เคลียร์พื้นที่หน้างาน. Loaded from
+// field_settings.field_rate_schedule, edited in the ค่ารถออกสนาม tab
+const DEFAULT_FIELD_RATES = { from: '2000-01', limits: [80, 100, 150], amounts: [70, 120, 170, 220], clearPct: 50 };
+let fieldRateSchedule = [DEFAULT_FIELD_RATES];
+function fieldRatesFor(iso) {
+  const month = (iso || todayLocalIso()).slice(0, 7);
+  let cur = fieldRateSchedule[0];
+  for (const s of fieldRateSchedule) if (s.from <= month) cur = s; // schedule is kept sorted by from
+  return cur;
 }
+// 0..3 = which distance tier, -1 = no distance
+function fieldTier(km, iso) {
+  km = Number(km) || 0;
+  if (km <= 0) return -1;
+  const i = fieldRatesFor(iso).limits.findIndex(l => km <= l);
+  return i === -1 ? 3 : i;
+}
+function fieldRate(km, iso) { const t = fieldTier(km, iso); return t < 0 ? 0 : Number(fieldRatesFor(iso).amounts[t]) || 0; }
 // fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
-// usual 50% for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
-function fieldFactor(workType, fullClearRate) { return workType === 'clear' ? (fullClearRate ? 1 : 0.5) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
+// usual clearPct for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
+function fieldFactor(workType, fullClearRate, iso) { return workType === 'clear' ? (fullClearRate ? 1 : (Number(fieldRatesFor(iso).clearPct) || 0) / 100) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
 // running 2 rigs doubles ค่าออกสนาม (Sundays/holidays don't — see countHolidayWork)
 function doubleFieldPay(r) { return !!r.dualRig; }
-function fieldMoney(r) { return fieldRate(r.distanceKm) * fieldFactor(r.workType || 'pile', r.fullClearRate) * (doubleFieldPay(r) ? 2 : 1); }
+function fieldMoney(r) { return fieldRate(r.distanceKm, r.date) * fieldFactor(r.workType || 'pile', r.fullClearRate, r.date) * (doubleFieldPay(r) ? 2 : 1); }
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
 function distanceCorrectionMoney(r) {
   if (r.originalDistanceKm == null || Number(r.originalDistanceKm) === Number(r.distanceKm)) return 0;
-  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate) * (doubleFieldPay(r) ? 2 : 1);
-  return (fieldRate(r.distanceKm) - fieldRate(r.originalDistanceKm)) * factor;
+  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate, r.date) * (doubleFieldPay(r) ? 2 : 1);
+  return (fieldRate(r.distanceKm, r.date) - fieldRate(r.originalDistanceKm, r.date)) * factor;
 }
 // rates.carByWorker: per-worker car rate overriding the default (e.g. the site supervisor's 380/day)
 function wearRate(vehicle, rates, workType, worker) {
@@ -370,7 +382,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const fieldPreviewVal = fieldRate(totalKm) * fieldFactor(f.workType, fullClearRate) * (f.dualRig ? 2 : 1);
+  const fieldPreviewVal = fieldRate(totalKm, f.date) * fieldFactor(f.workType, fullClearRate, f.date) * (f.dualRig ? 2 : 1);
   const sitePiles = f.site.trim()
     ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
     : [];
@@ -520,7 +532,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' && fullClearRate ? 'ค่าออกสนามเต็ม' : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
+              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' ? (fullClearRate ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
             </div>
             {(f.workType === 'office' || f.workType === 'office_errand') && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', marginTop: 10 }}>
@@ -1490,7 +1502,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '9px 12px' }} />
-          <button onClick={() => exportMonthlySummaryXlsx(workers, monReports, rates, monthTh)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Excel สรุปรายเดือน</button>
+          <button onClick={() => exportMonthlySummaryXlsx(workers, monReports, rates, monthTh, month)} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ Excel สรุปรายเดือน</button>
           <button onClick={() => onPrint(rows, monthTh)} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>🖨 พิมพ์ PDF</button>
         </div>
       </div>
@@ -1633,7 +1645,88 @@ function AdminHolidaysTab({ holidays, canEdit, onSave }) {
   );
 }
 
-function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
+const monthThOf = ym => { const [y, m] = ym.split('-').map(Number); return MONTHS_TH[m - 1] + ' ' + (y + 543); };
+const tierLabels = s => [
+  '1–' + s.limits[0] + ' กม.', (s.limits[0] + 1) + '–' + s.limits[1] + ' กม.',
+  (s.limits[1] + 1) + '–' + s.limits[2] + ' กม.', (s.limits[2] + 1) + ' กม.ขึ้นไป',
+];
+
+// shows the ค่าออกสนาม rates in force for the selected month, their history, and (for owners /
+// month-confirmers) a form to set new rates from a given month on
+function FieldRatesCard({ month, monthTh, schedule, canEdit, onSave }) {
+  const cur = fieldRatesFor(month + '-01');
+  const [editing, setEditing] = useState(false);
+  const [from, setFrom] = useState(month);
+  const [limits, setLimits] = useState(cur.limits);
+  const [amounts, setAmounts] = useState(cur.amounts);
+  const [clearPct, setClearPct] = useState(cur.clearPct);
+  const [err, setErr] = useState('');
+  const small = { background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '6px 8px', fontSize: 14, fontWeight: 700, width: 70, textAlign: 'center' };
+  const open = () => { setFrom(todayLocalIso().slice(0, 7)); setLimits(cur.limits); setAmounts(cur.amounts); setClearPct(cur.clearPct); setErr(''); setEditing(true); };
+  const save = async () => {
+    const L = limits.map(Number), A = amounts.map(Number), P = Number(clearPct);
+    if (!from) return setErr('กรุณาเลือกเดือนที่เริ่มมีผล');
+    if (L.some(v => !(v > 0)) || !(L[0] < L[1] && L[1] < L[2])) return setErr('ช่วงระยะทางต้องเรียงจากน้อยไปมาก');
+    if (A.some(v => !(v >= 0))) return setErr('ยอดเงินต้องเป็นตัวเลข');
+    if (!(P >= 0 && P <= 100)) return setErr('เปอร์เซ็นต์ต้องอยู่ระหว่าง 0–100');
+    if (!confirm('ใช้อัตราใหม่ตั้งแต่เดือน ' + monthThOf(from) + ' เป็นต้นไป?\nเดือนก่อนหน้านั้นยังใช้อัตราเดิม')) return;
+    const ok = await onSave([...schedule.filter(s => s.from !== from), { from, limits: L, amounts: A, clearPct: P }]);
+    if (ok) setEditing(false);
+  };
+  const remove = s => {
+    if (!confirm('ลบอัตราที่เริ่ม ' + monthThOf(s.from) + '?\nเดือนเหล่านั้นจะกลับไปใช้อัตราก่อนหน้า')) return;
+    onSave(schedule.filter(x => x !== s));
+  };
+  const labels = tierLabels(cur);
+
+  return (
+    <div style={{ ...card, padding: '14px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb' }}>ค่าออกสนามตามระยะทาง (ต่อวัน) · เดือน {monthTh}</div>
+        {canEdit && !editing && <button onClick={open} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>แก้ไขอัตรา</button>}
+      </div>
+      {!editing && <>
+        <div style={{ fontSize: 13, color: '#e9e6e1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+          {labels.map((l, i) => <span key={i}>{l} = <b>{num(cur.amounts[i])}</b> บาท</span>)}
+        </div>
+        <div style={{ fontSize: 12, color: '#9a958d', marginTop: 8 }}>เคลียร์พื้นที่ (ไม่ได้ตอก) ได้ {cur.clearPct}% · ไปแต่ไม่ได้ตอก ได้เฉพาะค่าสึกหรอ</div>
+      </>}
+      {editing && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>มีผลตั้งแต่เดือน <input type="month" value={from} onChange={e => setFrom(e.target.value)} style={{ ...small, width: 'auto', fontWeight: 400 }} /></label>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ width: 20, color: '#9a958d' }}>{i + 1}.</span>
+              {i === 0 ? '1' : Number(limits[i - 1]) + 1}{i < 3 ? '–' : ' กม.ขึ้นไป'}
+              {i < 3 && <><input type="number" min="1" value={limits[i]} onChange={e => setLimits(limits.map((v, j) => j === i ? e.target.value : v))} style={small} /> กม.</>} =
+              <input type="number" min="0" value={amounts[i]} onChange={e => setAmounts(amounts.map((v, j) => j === i ? e.target.value : v))} style={small} /> บาท
+            </div>
+          ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>เคลียร์พื้นที่ได้ <input type="number" min="0" max="100" value={clearPct} onChange={e => setClearPct(e.target.value)} style={small} /> %</label>
+          {err && <div style={{ color: '#f0b3a8' }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={save} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
+            <button onClick={() => setEditing(false)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+      {schedule.length > 1 && (
+        <div style={{ marginTop: 12, borderTop: '1px dotted #3a3e45', paddingTop: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#9a958d', marginBottom: 4 }}>ประวัติอัตรา</div>
+          {schedule.slice().reverse().map((s, i) => (
+            <div key={s.from} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#c8c3bb', padding: '3px 0', flexWrap: 'wrap' }}>
+              <span style={{ minWidth: 110 }}>{s.from === DEFAULT_FIELD_RATES.from || i === schedule.length - 1 ? 'อัตราเริ่มต้น' : 'ตั้งแต่ ' + monthThOf(s.from)}</span>
+              <span style={{ flex: 1 }}>{s.amounts.map(num).join(' / ')} บาท · เคลียร์ {s.clearPct}%</span>
+              {canEdit && i < schedule.length - 1 && <button onClick={() => remove(s)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}>ลบ</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminCarTab({ workers, reports, rates, onSetRates, onPrint, rateSchedule, onSaveRateSchedule, canEditRates }) {
   const [month, setMonth] = useState(todayLocalMonth());
   const monthReports = reports.filter(r => r.date.slice(0, 7) === month);
   const carByWorker = rates.carByWorker || {};
@@ -1687,14 +1780,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint }) {
             </select>
           </div>
         </div>
-        <div style={{ ...card, padding: '14px 18px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', marginBottom: 8 }}>ค่าออกสนามตามระยะทาง (ต่อวัน)</div>
-          <div style={{ fontSize: 13, color: '#e9e6e1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
-            <span>1–80 กม. = <b>70</b> บาท</span><span>81–100 กม. = <b>120</b> บาท</span>
-            <span>101–150 กม. = <b>170</b> บาท</span><span>151 กม.ขึ้นไป = <b>220</b> บาท</span>
-          </div>
-          <div style={{ fontSize: 12, color: '#9a958d', marginTop: 8 }}>เคลียร์พื้นที่ (ไม่ได้ตอก) ได้ 50% · ไปแต่ไม่ได้ตอก ได้เฉพาะค่าสึกหรอ</div>
-        </div>
+        <FieldRatesCard month={month} monthTh={monthTh} schedule={rateSchedule} canEdit={canEditRates} onSave={onSaveRateSchedule} />
       </div>
 
       <div style={{ ...card, overflow: 'hidden' }}>
@@ -2047,8 +2133,8 @@ function exportPrintReportsXlsx(rows, totals, includeCost, subtitle, fileName = 
 // accounting's monthly payroll sheet (สรุปรายงานโฟร์แมน): one row per worker with ค่าออกสนาม day
 // counts per distance tier, ค่ารถ, a blank หักเงิน column accounting fills in (รวมรายได้ is a formula
 // so it updates), and OT days worked on Sundays / company holidays
-function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
-  const TIERS = [70, 120, 170, 220];
+function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh, month) {
+  const TIERS = fieldRatesFor(month + '-01').amounts.map(Number); // the rates in force that month
   const title = 'สรุปรายงานโฟร์แมน ประจำเดือน ' + monthTh;
   const aoa = [
     [title],
@@ -2072,7 +2158,7 @@ function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
     const wearRates = new Set();
     for (const r of Object.values(byDate)) {
       const fm = fieldMoney(r);
-      if (fm > 0) { tierDays[TIERS.indexOf(fieldRate(r.distanceKm))] += fm / fieldRate(r.distanceKm); field += fm; }
+      if (fm > 0) { tierDays[fieldTier(r.distanceKm, r.date)] += fm / fieldRate(r.distanceKm, r.date); field += fm; }
       const wr = wearRate(r.vehicle, rates, r.workType, r.worker);
       if (wr > 0) { wear += wr; wearDays++; wearRates.add(wr); }
     }
@@ -2082,7 +2168,7 @@ function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh) {
     aoa.push([
       seq, w.full_name, w.nick, ...tierDays.map(d => d || ''),
       // N() treats the blank ('' text) cells as 0 — plain D4*70 gives #VALUE! on a blank tier/หักเงิน
-      n(field, 'N(D' + x + ')*70+N(E' + x + ')*120+N(F' + x + ')*170+N(G' + x + ')*220'),
+      n(field, ['D', 'E', 'F', 'G'].map((col, i) => 'N(' + col + x + ')*' + TIERS[i]).join('+')),
       wearDays || '', wearRates.size === 1 ? [...wearRates][0] : '', n(wear),
       '', n(field + wear, 'N(H' + x + ')+N(K' + x + ')-N(L' + x + ')'),
       sundays || '', holidays || '', '',
@@ -2277,6 +2363,7 @@ function App() {
   const [leaves, setLeaves] = useState([]);
   const [rates, setRates] = useState({ car: 250, moto: 100 });
   const [holidays, setHolidays] = useState({ ...COMPANY_HOLIDAYS_2026 });
+  const [rateSchedule, setRateSchedule] = useState(fieldRateSchedule);
   const [admins, setAdmins] = useState([]);
   const [monthLocks, setMonthLocks] = useState([]);
   const [finishedSites, setFinishedSites] = useState([]);
@@ -2329,6 +2416,10 @@ function App() {
         try { const h = JSON.parse(settings.company_holidays); if (h && typeof h === 'object') companyHolidays = h; } catch (e) { /* keep the built-in list */ }
       }
       setHolidays({ ...companyHolidays });
+      if (settings.field_rate_schedule) {
+        try { const s = JSON.parse(settings.field_rate_schedule); if (Array.isArray(s) && s.length) fieldRateSchedule = s.slice().sort((a, b) => a.from.localeCompare(b.from)); } catch (e) { /* keep the default rates */ }
+      }
+      setRateSchedule(fieldRateSchedule);
       let carByWorker = {};
       try { carByWorker = JSON.parse(settings.rate_car_by_worker || '{}') || {}; } catch (e) { carByWorker = {}; }
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100, carByWorker });
@@ -2470,6 +2561,14 @@ function App() {
     companyHolidays = next; // holidayOf() reads this, so every OT count/export picks it up
     setHolidays({ ...next });
   };
+  const saveRateSchedule = async (next) => {
+    const sorted = next.slice().sort((a, b) => a.from.localeCompare(b.from));
+    const { error } = await DB.from('field_settings').upsert({ key: 'field_rate_schedule', value: JSON.stringify(sorted) });
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return false; }
+    fieldRateSchedule = sorted; // fieldRate()/fieldFactor() read this
+    setRateSchedule(sorted);
+    return true;
+  };
   const setRatesRemote = async (next) => {
     setRates(next);
     await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
@@ -2594,7 +2693,7 @@ function App() {
           {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} onExportPerWorker={doExportPerWorker} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} onConfirmDistance={confirmDistance} />}
           {effectiveTab === 'piles' && <AdminPilesTab reports={reports} finishedSites={finishedSites} onMarkFinished={markSiteFinished} onUnmarkFinished={unmarkSiteFinished} />}
           {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
-          {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} />}
+          {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} rateSchedule={rateSchedule} onSaveRateSchedule={saveRateSchedule} canEditRates={(() => { const me = admins.find(a => a.name === adminName); return !!me && (me.role === 'owner' || !!me.canConfirmMonth); })()} />}
           {effectiveTab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}
           {effectiveTab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
           {effectiveTab === 'holidays' && <AdminHolidaysTab holidays={holidays} canEdit={(() => { const me = admins.find(a => a.name === adminName); return !!me && (me.role === 'owner' || !!me.canConfirmMonth); })()} onSave={saveHolidays} />}

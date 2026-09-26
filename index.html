@@ -158,17 +158,29 @@ function fieldTier(km, iso) {
   return i === -1 ? 3 : i;
 }
 function fieldRate(km, iso) { const t = fieldTier(km, iso); return t < 0 ? 0 : Number(fieldRatesFor(iso).amounts[t]) || 0; }
+// per-worker history of the "เคลียร์พื้นที่ได้ 100%" right: { nick: [{ from: 'YYYY-MM', on }] }, from
+// field_settings.full_clear_schedule, so granting/removing it from a month on doesn't touch earlier
+// months. A worker with no history just uses the field_workers.full_clear_rate flag
+let fullClearSchedule = {};
+function fullClearOn(nick, iso, flag) {
+  const list = fullClearSchedule[nick];
+  if (!list || !list.length) return !!flag;
+  const month = (iso || todayLocalIso()).slice(0, 7);
+  let on = list[0].on;
+  for (const e of list) if (e.from <= month) on = e.on;
+  return !!on;
+}
 // fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
-// usual clearPct for "เคลียร์พื้นที่หน้างาน" — see field_workers.full_clear_rate
+// usual clearPct for "เคลียร์พื้นที่หน้างาน" — see fullClearOn
 function fieldFactor(workType, fullClearRate, iso) { return workType === 'clear' ? (fullClearRate ? 1 : (Number(fieldRatesFor(iso).clearPct) || 0) / 100) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
 // running 2 rigs doubles ค่าออกสนาม (Sundays/holidays don't — see countHolidayWork)
 function doubleFieldPay(r) { return !!r.dualRig; }
-function fieldMoney(r) { return fieldRate(r.distanceKm, r.date) * fieldFactor(r.workType || 'pile', r.fullClearRate, r.date) * (doubleFieldPay(r) ? 2 : 1); }
+function fieldMoney(r) { return fieldRate(r.distanceKm, r.date) * fieldFactor(r.workType || 'pile', fullClearOn(r.worker, r.date, r.fullClearRate), r.date) * (doubleFieldPay(r) ? 2 : 1); }
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
 function distanceCorrectionMoney(r) {
   if (r.originalDistanceKm == null || Number(r.originalDistanceKm) === Number(r.distanceKm)) return 0;
-  const factor = fieldFactor(r.workType || 'pile', r.fullClearRate, r.date) * (doubleFieldPay(r) ? 2 : 1);
+  const factor = fieldFactor(r.workType || 'pile', fullClearOn(r.worker, r.date, r.fullClearRate), r.date) * (doubleFieldPay(r) ? 2 : 1);
   return (fieldRate(r.distanceKm, r.date) - fieldRate(r.originalDistanceKm, r.date)) * factor;
 }
 // rates.carByWorker: per-worker car rate overriding the default (e.g. the site supervisor's 380/day)
@@ -382,7 +394,8 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     setTimeout(() => setSavedFlash(false), 3000);
   };
 
-  const fieldPreviewVal = fieldRate(totalKm, f.date) * fieldFactor(f.workType, fullClearRate, f.date) * (f.dualRig ? 2 : 1);
+  const fullClear = fullClearOn(worker, f.date, fullClearRate); // the right as of the report's month
+  const fieldPreviewVal = fieldRate(totalKm, f.date) * fieldFactor(f.workType, fullClear, f.date) * (f.dualRig ? 2 : 1);
   const sitePiles = f.site.trim()
     ? [...new Set(reports.filter(r => r.site.trim() === f.site.trim()).flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))]
     : [];
@@ -532,7 +545,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' ? (fullClearRate ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
+              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' ? (fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
             </div>
             {(f.workType === 'office' || f.workType === 'office_errand') && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', marginTop: 10 }}>
@@ -1386,7 +1399,12 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [nick, setNick] = useState('');
   const [editingNick, setEditingNick] = useState(null);
   const [fullClearRate, setFullClearRate] = useState(false);
+  const [origFullClear, setOrigFullClear] = useState(false); // the right as it is today, before this edit
+  const [fullClearFrom, setFullClearFrom] = useState(todayLocalIso().slice(0, 7));
   const [error, setError] = useState('');
+  const fullClearToday = w => fullClearOn(w.nick, todayLocalIso(), w.full_clear_rate);
+  const lastFullClearChange = nick => { const l = fullClearSchedule[nick]; return l && l.length > 1 ? l[l.length - 1] : null; };
+  const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return MONTHS_TH_SHORT[m - 1] + ' ' + (y + 543); };
   const [copied, setCopied] = useState(null);
 
   const linkFor = (nick) => location.origin + location.pathname + '?user=' + nick;
@@ -1407,10 +1425,12 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
     if (!full || !n) return setError('กรุณากรอกชื่อ-นามสกุล และชื่อเล่น');
     const dup = workers.some(w => w.nick === n && n !== editingNick);
     if (dup) return setError('ชื่อเล่น "' + n + '" มีอยู่แล้ว กรุณาใช้ชื่ออื่น');
-    onSave({ fullName: full, nick: n, editingNick, fullClearRate });
-    setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setError('');
+    const changed = !!editingNick && fullClearRate !== origFullClear;
+    if (changed && !fullClearFrom) return setError('กรุณาเลือกเดือนที่เริ่มมีผลของสิทธิ์เคลียร์พื้นที่ 100%');
+    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear });
+    cancel();
   };
-  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setError(''); };
+  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setError(''); };
 
   return (
     <div>
@@ -1444,6 +1464,13 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <input type="checkbox" checked={fullClearRate} onChange={e => setFullClearRate(e.target.checked)} />
           ได้ค่าเคลียร์พื้นที่หน้างานเต็ม 100% (หัวหน้าดูแลหน้างานโดยตรง)
         </label>
+        {!!editingNick && fullClearRate !== origFullClear && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginLeft: 24, fontSize: 13, color: '#f0b98c', flexWrap: 'wrap' }}>
+            {fullClearRate ? 'ให้สิทธิ์' : 'ยกเลิกสิทธิ์'} ตั้งแต่เดือน
+            <input type="month" value={fullClearFrom} onChange={e => setFullClearFrom(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '6px 10px', fontSize: 13 }} />
+            <span style={{ color: '#9a958d' }}>เดือนก่อนหน้านั้นยังคิดแบบเดิม</span>
+          </label>
+        )}
         {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14, marginTop: 12 }}>{error}</div>}
       </div>
 
@@ -1452,11 +1479,11 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div key={w.nick} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{w.full_name} <span style={{ color: '#e8762d', fontWeight: 600, fontSize: 13 }}>({w.nick})</span></div>
-              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{w.full_clear_rate ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}</div>
+              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
-              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(!!w.full_clear_rate); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
                 const n = reports.filter(r => r.worker === w.nick).length;
                 const msg = n > 0 ? 'ลบ ' + w.nick + '? (รายงานเดิม ' + n + ' รายการจะยังอยู่ในระบบ)' : 'ลบ ' + w.nick + '?';
@@ -2420,6 +2447,9 @@ function App() {
         try { const s = JSON.parse(settings.field_rate_schedule); if (Array.isArray(s) && s.length) fieldRateSchedule = s.slice().sort((a, b) => a.from.localeCompare(b.from)); } catch (e) { /* keep the default rates */ }
       }
       setRateSchedule(fieldRateSchedule);
+      if (settings.full_clear_schedule) {
+        try { const s = JSON.parse(settings.full_clear_schedule); if (s && typeof s === 'object') fullClearSchedule = s; } catch (e) { /* fall back to the per-worker flag */ }
+      }
       let carByWorker = {};
       try { carByWorker = JSON.parse(settings.rate_car_by_worker || '{}') || {}; } catch (e) { carByWorker = {}; }
       setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100, carByWorker });
@@ -2537,7 +2567,20 @@ function App() {
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message);
     await load();
   };
-  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate }) => {
+  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear }) => {
+    // keep the dated history of the 100% clear right (and carry it over on a nick rename)
+    let sched = { ...fullClearSchedule }, schedChanged = false;
+    if (editingNick && editingNick !== nick && sched[editingNick]) { sched[nick] = sched[editingNick]; delete sched[editingNick]; schedChanged = true; }
+    if (fullClearFrom) {
+      const list = (sched[nick] || [{ from: '2000-01', on: !!origFullClear }]).filter(e => e.from !== fullClearFrom);
+      sched[nick] = [...list, { from: fullClearFrom, on: !!fullClearRate }].sort((a, b) => a.from.localeCompare(b.from));
+      schedChanged = true;
+    }
+    if (schedChanged) {
+      const { error } = await DB.from('field_settings').upsert({ key: 'full_clear_schedule', value: JSON.stringify(sched) });
+      if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+      fullClearSchedule = sched;
+    }
     if (editingNick && editingNick !== nick) {
       const { error: insErr } = await DB.from('field_workers').insert({ nick, full_name: fullName, full_clear_rate: !!fullClearRate });
       if (insErr) return alert('บันทึกไม่สำเร็จ: ' + insErr.message);

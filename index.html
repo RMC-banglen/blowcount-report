@@ -1578,7 +1578,10 @@ function UpdateBanner() {
 // from the home screen (standalone) or after they tap "ปิด" (remembered on that phone)
 function HomeScreenTip() {
   const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone;
-  const [hidden, setHidden] = useState(() => { try { return standalone || localStorage.getItem('home_tip_hidden') === '1'; } catch (e) { return !!standalone; } });
+  // phones/tablets only — a computer can't pin to a phone home screen (iPadOS reports itself as a Mac with touch)
+  const ua = navigator.userAgent;
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const [hidden, setHidden] = useState(() => { if (!mobile) return true; try { return standalone || localStorage.getItem('home_tip_hidden') === '1'; } catch (e) { return !!standalone; } });
   const [open, setOpen] = useState(false);
   if (hidden) return null;
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -1656,7 +1659,7 @@ const ANDROID_STEPS = [
     <Ring cx={102} cy={21} r={9} />
     <Lines y={38} n={9} />
   </Phone> },
-  { text: <>กด <b>เพิ่มลงในหน้าจอหลัก</b></>, svg: <Phone>
+  { text: <>กด <b>เพิ่มลงในหน้าจอหลัก</b> (บางเครื่องเขียนว่า <b>ติดตั้งแอป</b>)</>, svg: <Phone>
     <rect x="8" y="12" width="104" height="16" fill="#e4e4e7" />
     <Lines y={38} n={9} />
     <rect x="44" y="18" width="66" height="120" rx="4" fill="#fff" stroke="#d4d4d8" />
@@ -2861,13 +2864,30 @@ function App() {
       }
 
       const params = new URLSearchParams(location.search);
-      const u = params.get('user');
+      let u = params.get('user');
+      // opened from the Android app icon (manifest start_url ./?app=1): go to this phone's worker
+      if (!u && params.get('app') === '1') {
+        let saved = null;
+        try { saved = localStorage.getItem('my_worker'); } catch (e) { /* private mode */ }
+        if (saved) { u = saved; history.replaceState(null, '', location.pathname + '?user=' + encodeURIComponent(saved)); }
+      }
       if (u && (wRes.data || []).some(w => w.nick === u)) {
         setView('form'); setWorker(u);
         // name the home-screen shortcut after the worker so each phone's icon is labelled with their name
         document.title = 'รายงาน ' + u;
         const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
         if (appTitle) appTitle.setAttribute('content', 'รายงาน ' + u);
+        // remember whose phone this is: the Android app icon opens ./?app=1 (manifest.json can't
+        // carry each worker's ?user=), and that start page reads this back
+        try { localStorage.setItem('my_worker', u); } catch (e) { /* private mode */ }
+        // Android only: the manifest makes "add to home screen" install a full-screen app. iOS is left
+        // without it on purpose — it would open ./?app=1 in a separate storage with no worker saved,
+        // while without a manifest it keeps the exact ?user= link it was added from
+        if (/Android/i.test(navigator.userAgent)) {
+          const link = document.createElement('link');
+          link.rel = 'manifest'; link.href = './manifest.json';
+          document.head.appendChild(link);
+        }
       }
     } catch (e) {
       console.error(e);

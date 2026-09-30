@@ -1680,12 +1680,20 @@ const ANDROID_STEPS = [
 ];
 function HomeScreenSteps({ defaultOs }) {
   const [os, setOs] = useState(defaultOs);
+  // in-app browsers (LINE, Facebook, Messenger, Instagram, Android webviews) have no add-to-home-screen
+  const inApp = /\bLine\/|FBAN|FBAV|Instagram|; wv\)/i.test(navigator.userAgent);
   const steps = [...(os === 'ios' ? IOS_STEPS : ANDROID_STEPS), { text: <>ได้ไอคอนบนหน้าจอ กดเข้ามากรอกรายงานได้เลย</>, svg: <Phone><HomeIcon label="รายงาน ชื่อเล่น" /></Phone> }];
   const tab = (key, label) => (
     <button onClick={() => setOs(key)} style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid ' + (os === key ? ORANGE : '#3a3e45'), background: os === key ? ORANGE : '#1b1d21', color: os === key ? '#1b1d21' : '#c8c3bb', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>{label}</button>
   );
   return (
     <div style={{ marginTop: 12 }}>
+      {inApp && (
+        <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 8, padding: '10px 12px', fontSize: 14, marginBottom: 12, lineHeight: 1.6 }}>
+          ตอนนี้เปิดอยู่ในแอปอื่น (เช่น LINE / Facebook) ซึ่งเพิ่มไว้หน้าจอไม่ได้<br />
+          กดปุ่ม <b>⋮</b> หรือ <b>แชร์</b> แล้วเลือก <b>เปิดใน {os === 'ios' ? 'Safari' : 'Chrome'}</b> ก่อน แล้วทำตามขั้นตอนด้านล่าง
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>{tab('ios', 'iPhone')}{tab('android', 'Android')}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
         {steps.map((s, i) => (
@@ -2864,6 +2872,13 @@ function App() {
       }
 
       const params = new URLSearchParams(location.search);
+      // a worker link tapped inside LINE opens in LINE's own browser, which can't add to the home
+      // screen — LINE's openExternalBrowser=1 flag hands it to the phone's real browser instead
+      if (params.get('user') && /\bLine\//i.test(navigator.userAgent) && !params.get('openExternalBrowser')) {
+        params.set('openExternalBrowser', '1');
+        location.replace(location.pathname + '?' + params.toString());
+        return;
+      }
       let u = params.get('user');
       // opened from the Android app icon (manifest start_url ./?app=1): go to this phone's worker
       if (!u && params.get('app') === '1') {

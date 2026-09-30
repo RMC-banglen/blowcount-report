@@ -179,6 +179,8 @@ function doubleFieldPay(r) { return !!r.dualRig; }
 // offers เคลียร์หน้างาน / อยู่บริษัท with no distance, and เคลียร์หน้างาน pays this flat amount at any distance
 let supervisorRates = {};
 function supervisorFlat(nick) { return supervisorRates[nick] != null ? Number(supervisorRates[nick]) || 0 : null; }
+// a supervisor's 'clear' day is really inspecting the site, so it's labelled differently everywhere
+function clearLabel(nick) { return supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่หน้างาน'; }
 function fieldMoney(r) {
   const flat = supervisorFlat(r.worker);
   if (flat != null && r.workType === 'clear') return flat;
@@ -555,7 +557,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {WORK_TYPES.filter(wt => !isSup || wt.key === 'clear' || wt.key === 'office').map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' ? (isSup ? 'ค่าออกสนาม ' + num(supFlat) + ' บาท' : fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
+              {WORK_TYPES.filter(wt => !isSup || wt.key === 'clear' || wt.key === 'office').map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.key === 'clear' ? clearLabel(worker) : wt.label} sub={wt.key === 'clear' ? (isSup ? 'ค่าออกสนาม ' + num(supFlat) + ' บาท' : fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
             </div>
             {(f.workType === 'office' || f.workType === 'office_errand') && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', marginTop: 10 }}>
@@ -776,7 +778,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                 <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(r.date)} · {r.site}</div>
-                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
+                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? clearLabel(r.worker) : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
                     <div style={{ fontSize: 12, color: '#9a958d', marginTop: 3 }}>{r.timeIn}–{r.timeOut} น. · {vehicleTh(r.vehicle)}</div>
                     {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {r.note}</div>}
                     {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (() => {
@@ -1328,7 +1330,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{num(it.count)} ต้น <span style={{ color: '#9a958d', fontWeight: 500 }}>(สะสม {num(cumFor(reports, r.site, it.pile, r.date, null))})</span></span>
                 </div>
               ))}
-              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : 'ไปหน้างานแต่ไม่ได้ตอก'}</div>}
+              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? (supervisorFlat(r.worker) != null ? 'ตรวจหน้างาน (หัวหน้างาน)' : 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)') : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : 'ไปหน้างานแต่ไม่ได้ตอก'}</div>}
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 6 }}>เข้า {r.timeIn} · ออก {r.timeOut} · {vehicleTh(r.vehicle)} · {r.distanceLegs && r.distanceLegs.length > 1 ? r.distanceLegs.map(l => l.km).join('+') + '=' + num(r.distanceKm) + ' กม.' : (r.distanceKm ? num(r.distanceKm) + ' กม.' : '-')}{!!r.tollFee && <> · ค่าทางด่วน {num(r.tollFee)} บาท</>}</div>
               {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {r.note}</div>}
               {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (
@@ -1490,7 +1492,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', flexWrap: 'wrap' }}>
           <input type="checkbox" checked={isSupervisor} onChange={e => setIsSupervisor(e.target.checked)} />
-          หัวหน้างาน — ลิงก์มีแค่ "เคลียร์พื้นที่หน้างาน" กับ "อยู่บริษัท" ไม่ต้องกรอกระยะทาง
+          หัวหน้างาน — ลิงก์มีแค่ "ตรวจหน้างาน" กับ "อยู่บริษัท" ไม่ต้องกรอกระยะทาง
           {isSupervisor && <>· เคลียร์หน้างานได้ <input type="number" min="0" value={supervisorAmt} onChange={e => setSupervisorAmt(e.target.value)} style={{ ...inputStyle, width: 80, padding: '5px 8px', fontSize: 13, textAlign: 'center', fontWeight: 700 }} /> บาท/วัน ทุกระยะทาง</>}
         </label>
         {!!editingNick && fullClearRate !== origFullClear && (
@@ -1508,7 +1510,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div key={w.nick} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{w.full_name} <span style={{ color: '#e8762d', fontWeight: 600, fontSize: 13 }}>({w.nick})</span></div>
-              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (เคลียร์หน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
+              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (ตรวจหน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
@@ -2331,14 +2333,14 @@ async function exportXlsxPerWorker(filtered, reports, rates, leaves, workers, pe
 function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ระยะทางไป-กลับ(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ', 'ทำงานวันหยุด']];
-  const wtTh = w => w === 'clear' ? 'เคลียร์พื้นที่' : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
+  const wtTh = (w, nick) => w === 'clear' ? (supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่') : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
   const dataRows = [];
   // money is paid once per worker+date (same rule as openPrintReports' totals) — extra pile items or a
   // second report on the same day get blank distance/money cells so summing the columns doesn't double it
   const payingReport = {};
   for (const r of filtered) { const k = r.worker + '|' + r.date; if (!payingReport[k]) payingReport[k] = r; }
   for (const r of filtered) {
-    const base = [r.date, workerLabel(r.worker), r.site, wtTh(r.workType)];
+    const base = [r.date, workerLabel(r.worker), r.site, wtTh(r.workType, r.worker)];
     const pays = payingReport[r.worker + '|' + r.date] === r;
     const money = pays ? [r.distanceKm || '', r.distanceKm ? r.distanceKm * 2 : '', wearRate(r.vehicle, rates, r.workType, r.worker), fieldMoney(r), Number(r.tollFee) || 0] : ['', '', '', '', ''];
     const blankMoney = ['', '', '', '', ''];
@@ -2715,7 +2717,7 @@ function App() {
     const rows = sorted.flatMap(r => {
       const wear = wearRate(r.vehicle, rates, r.workType, r.worker), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: workerLabel(r.worker), site: r.site, time: r.timeIn + '–' + r.timeOut, vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
-      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? 'เคลียร์พื้นที่หน้างาน' : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
+      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? clearLabel(r.worker) : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
       // a report with several pile items becomes several rows here — the shared columns (date/site/
       // time/vehicle/money) are only rendered on the first row and merged (rowSpan) across the rest
       return r.items.map((it, idx) => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)), rowSpan: r.items.length, isFirst: idx === 0 }));

@@ -1796,8 +1796,6 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [fullClearFrom, setFullClearFrom] = useState(todayLocalIso().slice(0, 7));
   const [error, setError] = useState('');
   const fullClearToday = w => fullClearOn(w.nick, todayLocalIso(), w.full_clear_rate);
-  const lastFullClearChange = nick => { const l = fullClearSchedule[nick]; return l && l.length > 1 ? l[l.length - 1] : null; };
-  const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return MONTHS_TH_SHORT[m - 1] + ' ' + (y + 543); };
   const [copied, setCopied] = useState(null);
 
   const linkFor = (nick) => location.origin + location.pathname + '?user=' + nick;
@@ -1894,7 +1892,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div key={w.nick} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{w.full_name} <span style={{ color: '#e8762d', fontWeight: 600, fontSize: 13 }}>({w.nick})</span></div>
-              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{isBoredWorker(w.nick) ? ' · ดูหน้างานเข็มเจาะ' : ''}{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (ตรวจหน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
+              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{isBoredWorker(w.nick) ? ' · ดูหน้างานเข็มเจาะ' : ''}{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (ตรวจหน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => setQrFor(w)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>QR</button>

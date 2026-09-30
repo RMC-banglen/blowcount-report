@@ -1611,6 +1611,39 @@ function WorkerQrModal({ worker, url, onClose }) {
   );
 }
 
+// every worker's QR as a PNG card (name + nick + QR) in one zip, named per person — for sending
+// over LINE or printing and handing out
+async function downloadAllWorkerQrs(workers, linkFor) {
+  if (typeof QRCode === 'undefined' || typeof JSZip === 'undefined') return alert('โหลดตัวสร้าง QR ไม่สำเร็จ กรุณารีเฟรชหน้าแล้วลองใหม่');
+  try { await document.fonts.ready; } catch (e) { /* draw with whatever font is loaded */ }
+  const zip = new JSZip();
+  const W = 480, H = 600, Q = 360;
+  for (const w of workers) {
+    const holder = document.createElement('div');
+    new QRCode(holder, { text: linkFor(w.nick), width: Q, height: Q, correctLevel: QRCode.CorrectLevel.M });
+    const qr = holder.querySelector('canvas');
+    if (!qr) continue;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e8762d'; g.fillRect(0, 0, W, 10);
+    g.textAlign = 'center'; g.fillStyle = '#1a1a1a';
+    g.font = '800 30px Sarabun, sans-serif'; g.fillText(w.full_name, W / 2, 58);
+    g.fillStyle = '#e8762d'; g.font = '700 26px Sarabun, sans-serif'; g.fillText('(' + w.nick + ')', W / 2, 96);
+    g.drawImage(qr, (W - Q) / 2, 120, Q, Q);
+    g.fillStyle = '#555'; g.font = '500 20px Sarabun, sans-serif';
+    g.fillText('ส่องด้วยกล้องมือถือ เพื่อเปิดหน้ารายงาน', W / 2, 520);
+    g.fillText('แล้วเพิ่มไว้ที่หน้าจอโทรศัพท์', W / 2, 550);
+    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    zip.file(safeFileName('QR_' + w.full_name + ' (' + w.nick + ')') + '.png', blob);
+  }
+  const out = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(out); a.download = 'QR พนักงานทั้งหมด.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
 function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [fullName, setFullName] = useState('');
   const [nick, setNick] = useState('');
@@ -1662,9 +1695,12 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div style={{ fontSize: 13, color: '#9a958d' }}>ทั้งหมด {workers.length} คน · ชื่อเล่นใช้เป็นลิงก์ประจำตัว (?user=ชื่อเล่น)</div>
         </div>
         {workers.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => downloadAllWorkerQrs(workers, n => location.origin + location.pathname + '?user=' + encodeURIComponent(n))} style={{ background: 'none', border: '1px solid #e8762d', color: '#e8762d', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>↓ ดาวน์โหลด QR ทุกคน</button>
           <button onClick={copyAllLinks} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             {copied === '__all__' ? 'คัดลอกแล้ว ✓' : '↓ คัดลอกลิงก์ทั้งหมด'}
           </button>
+          </div>
         )}
       </div>
 

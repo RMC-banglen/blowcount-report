@@ -1429,6 +1429,42 @@ function AdminPilesTab({ reports, finishedSites, onMarkFinished, onUnmarkFinishe
   );
 }
 
+// A home-screen app (esp. iOS) can sit on an old copy of the page for days. Compare the app code
+// that's running with the code currently on the server — on open, whenever the app comes back to
+// the foreground, and every 30 min — and offer a one-tap update. It never reloads on its own, so a
+// half-typed report isn't lost. No version number to bump: the page's own script is the version.
+const APP_CODE = (() => { const s = document.querySelector('script[type="text/babel"]'); return s ? s.textContent : ''; })();
+function UpdateBanner() {
+  const [hasUpdate, setHasUpdate] = useState(false);
+  useEffect(() => {
+    let last = 0;
+    const check = async () => {
+      if (Date.now() - last < 60000) return; // at most once a minute
+      last = Date.now();
+      try {
+        // cache: 'reload' goes to the network and refreshes the browser cache, so the reload below gets the new page
+        const html = await (await fetch(location.pathname, { cache: 'reload' })).text();
+        const m = html.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/);
+        const norm = s => s.replace(/\r\n?/g, '\n').trim();
+        if (m && APP_CODE && norm(m[1]) !== norm(APP_CODE)) setHasUpdate(true);
+      } catch (e) { /* offline — try again later */ }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    const first = setTimeout(check, 5000);
+    const timer = setInterval(check, 30 * 60 * 1000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearTimeout(first); clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+  if (!hasUpdate) return null;
+  return (
+    <div className="no-print" style={{ position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 200, maxWidth: 520, margin: '0 auto', background: '#e8762d', color: '#1b1d21', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 6px 24px rgba(0,0,0,.4)' }}>
+      <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>มีเวอร์ชันใหม่ของระบบ</span>
+      <button onClick={() => location.reload()} style={{ background: '#1b1d21', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>อัปเดตเลย</button>
+      <button onClick={() => setHasUpdate(false)} style={{ background: 'none', border: 'none', color: '#1b1d21', fontSize: 13, cursor: 'pointer' }}>ภายหลัง</button>
+    </div>
+  );
+}
+
 // on a worker's own link: how to pin it to the phone's home screen. Hidden once they're opening it
 // from the home screen (standalone) or after they tap "ปิด" (remembered on that phone)
 function HomeScreenTip() {
@@ -2923,6 +2959,7 @@ function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#23262b', color: '#e9e6e1' }}>
+      <UpdateBanner />
       {!(view === 'admin' && !adminAuthed) && (
         <TopBar view={view} worker={worker} workerFull={workerRec ? (workerRec.full_name + ' (' + workerRec.nick + ')') : ''} tab={effectiveTab}
           onHome={() => setView('admin')} onAdminTab={setTab} onLogout={logoutAdmin} allowedTabKeys={myAllowedTabs} />

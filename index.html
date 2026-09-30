@@ -298,6 +298,14 @@ function composePileStr(it) {
 const blankPileItem = { mode: 'picker', shape: 'I', standard: 'มอก', size: '', sizeCustom: '', length: '', joint: 'double', jointCount: '2', extra: '', pileText: '', count: '' };
 const legacyPileItem = (i) => ({ ...blankPileItem, mode: 'text', pileText: i.pile, count: String(i.count) });
 
+// a save error in plain Thai, telling the worker their input is still there to retry
+function saveErrorText(error) {
+  const msg = (error && error.message) || '';
+  if (/fetch|network|Load failed/i.test(msg)) return 'ส่งข้อมูลไม่สำเร็จ — สัญญาณอินเทอร์เน็ตอาจไม่ดี\nข้อมูลที่กรอกยังอยู่ ลองกดบันทึกอีกครั้ง';
+  if (/row-level security/i.test(msg)) return 'บันทึกไม่ได้ — เดือนนี้ถูกล็อกแล้ว (ยืนยันยอดแล้ว) กรุณาติดต่อแอดมิน';
+  return 'บันทึกไม่สำเร็จ: ' + msg + '\nข้อมูลที่กรอกยังอยู่ ลองกดบันทึกอีกครั้ง';
+}
+
 async function sha256Hex(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -393,6 +401,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   } : blank);
   const [error, setError] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saving, setSaving] = useState(false); // a save is on its way to the server
   const [historyMonth, setHistoryMonth] = useState(todayLocalMonth());
   const [useLastReport, setUseLastReport] = useState(false);
 
@@ -416,11 +425,16 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     window.scrollTo(0, 0);
   };
   const cancelEditLeave = () => { setEditingLeave(null); setLf(blankLeave); setLeaveError(''); };
-  const submitLeave = () => {
+  const submitLeave = async () => {
+    if (saving) return;
     if (!lf.date) return setLeaveError('กรุณาเลือกวันที่');
     const dup = myLeaves.some(l => l.date === lf.date && (!editingLeave || l.id !== editingLeave.id));
     if (dup) return setLeaveError('วันที่นี้มีรายการวันหยุด/ลาบันทึกไว้แล้ว กรุณาแก้ไขรายการเดิมแทนการบันทึกใหม่');
-    onSaveLeave({ id: editingLeave ? editingLeave.id : Date.now(), worker, date: lf.date, leaveType: lf.leaveType, reason: lf.reason.trim() });
+    // wait for the server — on a failed save the form keeps what was typed
+    setSaving(true);
+    const ok = await onSaveLeave({ id: editingLeave ? editingLeave.id : Date.now(), worker, date: lf.date, leaveType: lf.leaveType, reason: lf.reason.trim() });
+    setSaving(false);
+    if (!ok) return;
     setLeaveError(''); setLeaveSavedFlash(true);
     setEditingLeave(null);
     setLf(blankLeave);
@@ -450,7 +464,11 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
   const totalKm = f.distanceLegs.reduce((s, l) => s + (Number(l.km) || 0), 0);
 
-  const submit = () => {
+  // one id per new report, kept across retries — if a save reached the server but the reply was
+  // lost, pressing บันทึก again overwrites that same row instead of creating a duplicate
+  const draftId = useRef(null);
+  const submit = async () => {
+    if (saving) return;
     const items = f.workType === 'pile' ? f.items.map(i => ({ pile: composePileStr(i), count: Number(i.count) })).filter(i => i.pile && i.count > 0)
       : f.workType === 'bored' ? f.bored.map(b => ({ pile: composeBoredStr(b), count: Number(b.count), dia: Number(b.size), length: Number(b.length) })).filter(i => i.length > 0 && i.count > 0)
       : [];
@@ -462,15 +480,21 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     if (f.workType === 'office_errand' && !f.note.trim()) return setError('กรุณากรอกเหตุผลที่ถูกใช้งานไปที่อื่น');
     const dup = myAll.some(r => r.date === f.date && (!editingReport || r.id !== editingReport.id));
     if (dup) return setError('วันที่นี้มีรายงานบันทึกไว้แล้ว กรุณาแก้ไขรายการเดิมแทนการบันทึกใหม่');
+    if (!editingReport && !draftId.current) draftId.current = Date.now();
     const report = {
-      id: editingReport ? editingReport.id : Date.now(), worker, date: f.date, site: f.site.trim(),
+      id: editingReport ? editingReport.id : draftId.current, worker, date: f.date, site: f.site.trim(),
       items, timeIn: f.timeIn, timeOut: f.timeOut, vehicle: isSup ? 'car' : f.vehicle,
       distanceKm: totalKm,
       distanceLegs: f.distanceLegs.filter(l => Number(l.km) > 0).map(l => ({ km: Number(l.km), note: l.note.trim() })),
       tollFee: Number(f.tollFee) || 0,
       workType: f.workType, note: f.note.trim(), dualRig: f.workType === 'pile' && !!f.dualRig
     };
-    onSave(report);
+    // wait for the server — on a failed save the form keeps everything that was typed
+    setSaving(true);
+    const ok = await onSave(report);
+    setSaving(false);
+    if (!ok) return;
+    draftId.current = null;
     setError(''); setSavedFlash(true);
     setF(blank);
     setUseLastReport(false);
@@ -567,7 +591,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                 <textarea value={lf.reason} onChange={e => setLf(s => ({ ...s, reason: e.target.value }))} rows="2" placeholder="ระบุเหตุผลเพิ่มเติม (ถ้ามี)" style={{ ...inputStyle, resize: 'vertical' }} />
               </label>
               {!!leaveError && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{leaveError}</div>}
-              <button onClick={submitLeave} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: 'pointer' }}>{editingLeave ? 'บันทึกการแก้ไข' : 'บันทึกวันหยุด/ลา'}</button>
+              <button onClick={submitLeave} disabled={saving} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก…' : editingLeave ? 'บันทึกการแก้ไข' : 'บันทึกวันหยุด/ลา'}</button>
             </div>
           </div>
 
@@ -838,8 +862,8 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
           {!!error && <div style={{ background: '#4a2a26', border: '1px solid #d95b4a', color: '#f0b3a8', borderRadius: 6, padding: '10px 14px', fontSize: 14 }}>{error}</div>}
 
-          <button onClick={submit} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: 'pointer', marginTop: 4 }}>
-            {editingReport ? 'บันทึกการแก้ไข' : 'บันทึกรายงาน'}
+          <button onClick={submit} disabled={saving} style={{ background: '#e8762d', color: '#1b1d21', border: 'none', borderRadius: 8, padding: 16, fontWeight: 800, fontSize: 17, cursor: saving ? 'wait' : 'pointer', marginTop: 4, opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'กำลังบันทึก…' : editingReport ? 'บันทึกการแก้ไข' : 'บันทึกรายงาน'}
           </button>
         </div>
       </div>
@@ -2821,10 +2845,11 @@ function App() {
       work_type: report.workType, note: report.note, dual_rig: !!report.dualRig
     };
     const { error } = await DB.from('field_reports').upsert(row);
-    if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+    if (error) { alert(saveErrorText(error)); return false; }
     setEditingReport(null);
     setEditingAsAdmin(false);
-    await load();
+    load(); // refresh in the background — the form only needs to know the save landed
+    return true;
   };
   // quick inline distance correction from รายงานรวม, without opening the full edit form —
   // same admin-correction snapshot rule as saveReport, collapsed to a single leg
@@ -2854,8 +2879,9 @@ function App() {
   const saveLeave = async (leave) => {
     const row = { id: leave.id, worker_nick: leave.worker, date: leave.date, leave_type: leave.leaveType, reason: leave.reason };
     const { error } = await DB.from('field_leaves').upsert(row);
-    if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
-    await load();
+    if (error) { alert(saveErrorText(error)); return false; }
+    load();
+    return true;
   };
   const deleteLeave = async (id) => {
     const { error } = await DB.from('field_leaves').delete().eq('id', id);

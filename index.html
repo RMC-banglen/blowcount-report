@@ -175,7 +175,15 @@ function fullClearOn(nick, iso, flag) {
 function fieldFactor(workType, fullClearRate, iso) { return workType === 'clear' ? (fullClearRate ? 1 : (Number(fieldRatesFor(iso).clearPct) || 0) / 100) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
 // running 2 rigs doubles ค่าออกสนาม (Sundays/holidays don't — see countHolidayWork)
 function doubleFieldPay(r) { return !!r.dualRig; }
-function fieldMoney(r) { return fieldRate(r.distanceKm, r.date) * fieldFactor(r.workType || 'pile', fullClearOn(r.worker, r.date, r.fullClearRate), r.date) * (doubleFieldPay(r) ? 2 : 1); }
+// site supervisors (หัวหน้างาน): { nick: baht } from field_settings.supervisor_workers. Their link only
+// offers เคลียร์หน้างาน / อยู่บริษัท with no distance, and เคลียร์หน้างาน pays this flat amount at any distance
+let supervisorRates = {};
+function supervisorFlat(nick) { return supervisorRates[nick] != null ? Number(supervisorRates[nick]) || 0 : null; }
+function fieldMoney(r) {
+  const flat = supervisorFlat(r.worker);
+  if (flat != null && r.workType === 'clear') return flat;
+  return fieldRate(r.distanceKm, r.date) * fieldFactor(r.workType || 'pile', fullClearOn(r.worker, r.date, r.fullClearRate), r.date) * (doubleFieldPay(r) ? 2 : 1);
+}
 // money difference from a company distance correction (original -> current), using the
 // same tiered rate for both sides so it's an accurate delta, not a linear approximation
 function distanceCorrectionMoney(r) {
@@ -307,7 +315,9 @@ function TopBar({ view, worker, workerFull, onHome, onAdminTab, tab, onLogout, a
 
 function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownPiles, editingReport, onCancelEdit, onSave, onDelete, onEdit, leaves, onSaveLeave, onDeleteLeave, monthLocks, fullClearRate }) {
   const [mode, setMode] = useState('report');
-  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: 'pile', note: '', dualRig: false };
+  const supFlat = supervisorFlat(worker); // non-null = หัวหน้างาน: only clear/office, no distance, flat pay
+  const isSup = supFlat != null;
+  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: '08:00', timeOut: '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: isSup ? 'clear' : 'pile', note: '', dualRig: false };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
@@ -374,7 +384,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     const isOffice = f.workType === 'office' || f.workType === 'office_errand';
     if (!isOffice && !f.site.trim()) return setError('กรุณากรอกชื่อหน่วยงาน');
     if (f.workType === 'pile' && !items.length) return setError('กรุณากรอกชนิดเสาและจำนวนตอกอย่างน้อย 1 รายการ');
-    if (!isOffice && !(totalKm > 0)) return setError('กรุณากรอกระยะทางไปหน้างาน (กม.)');
+    if (!isOffice && !isSup && !(totalKm > 0)) return setError('กรุณากรอกระยะทางไปหน้างาน (กม.)');
     if (f.workType === 'office_errand' && !f.note.trim()) return setError('กรุณากรอกเหตุผลที่ถูกใช้งานไปที่อื่น');
     const dup = myAll.some(r => r.date === f.date && (!editingReport || r.id !== editingReport.id));
     if (dup) return setError('วันที่นี้มีรายงานบันทึกไว้แล้ว กรุณาแก้ไขรายการเดิมแทนการบันทึกใหม่');
@@ -545,7 +555,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {WORK_TYPES.map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' ? (fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
+              {WORK_TYPES.filter(wt => !isSup || wt.key === 'clear' || wt.key === 'office').map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.label} sub={wt.key === 'clear' ? (isSup ? 'ค่าออกสนาม ' + num(supFlat) + ' บาท' : fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
             </div>
             {(f.workType === 'office' || f.workType === 'office_errand') && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', marginTop: 10 }}>
@@ -654,7 +664,18 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
             </label>
           </div>
 
-          {f.workType !== 'office' && (
+          {isSup && f.workType === 'clear' && (
+            <div style={{ fontSize: 13, background: '#1b1d21', borderRadius: 6, padding: '10px 14px', color: '#f0b98c' }}>
+              ค่าออกสนามวันนี้: <b style={{ fontSize: 16 }}>{num(supFlat)}</b> บาท (หัวหน้างาน ไม่ต้องกรอกระยะทาง){holidayOf(f.date) && <span style={{ color: '#e8762d' }}> · ทำงาน{holidayOf(f.date).name}</span>}
+            </div>
+          )}
+          {isSup && f.workType !== 'office' && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={labelStyle}>ค่าทางด่วน (บาท) <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span></span>
+              <input type="number" min="0" value={f.tollFee} onChange={e => setF(s => ({ ...s, tollFee: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontWeight: 700, textAlign: 'center' }} />
+            </label>
+          )}
+          {!isSup && f.workType !== 'office' && (
             <div>
               <div style={{ ...labelStyle, marginBottom: 8 }}>ระยะทาง (กม.) {f.workType === 'office_errand' && <span style={{ fontWeight: 400, color: '#9a958d' }}>(ไม่บังคับ)</span>}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1400,6 +1421,8 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [editingNick, setEditingNick] = useState(null);
   const [fullClearRate, setFullClearRate] = useState(false);
   const [origFullClear, setOrigFullClear] = useState(false); // the right as it is today, before this edit
+  const [isSupervisor, setIsSupervisor] = useState(false);
+  const [supervisorAmt, setSupervisorAmt] = useState('70');
   const [fullClearFrom, setFullClearFrom] = useState(todayLocalIso().slice(0, 7));
   const [error, setError] = useState('');
   const fullClearToday = w => fullClearOn(w.nick, todayLocalIso(), w.full_clear_rate);
@@ -1427,10 +1450,11 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
     if (dup) return setError('ชื่อเล่น "' + n + '" มีอยู่แล้ว กรุณาใช้ชื่ออื่น');
     const changed = !!editingNick && fullClearRate !== origFullClear;
     if (changed && !fullClearFrom) return setError('กรุณาเลือกเดือนที่เริ่มมีผลของสิทธิ์เคลียร์พื้นที่ 100%');
-    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear });
+    if (isSupervisor && !(Number(supervisorAmt) >= 0 && supervisorAmt !== '')) return setError('กรุณาใส่ค่าออกสนามของหัวหน้างาน');
+    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear, supervisor: isSupervisor ? Number(supervisorAmt) : null });
     cancel();
   };
-  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setError(''); };
+  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(false); setSupervisorAmt('70'); setError(''); };
 
   return (
     <div>
@@ -1464,6 +1488,11 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <input type="checkbox" checked={fullClearRate} onChange={e => setFullClearRate(e.target.checked)} />
           ได้ค่าเคลียร์พื้นที่หน้างานเต็ม 100% (หัวหน้าดูแลหน้างานโดยตรง)
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', flexWrap: 'wrap' }}>
+          <input type="checkbox" checked={isSupervisor} onChange={e => setIsSupervisor(e.target.checked)} />
+          หัวหน้างาน — ลิงก์มีแค่ "เคลียร์พื้นที่หน้างาน" กับ "อยู่บริษัท" ไม่ต้องกรอกระยะทาง
+          {isSupervisor && <>· เคลียร์หน้างานได้ <input type="number" min="0" value={supervisorAmt} onChange={e => setSupervisorAmt(e.target.value)} style={{ ...inputStyle, width: 80, padding: '5px 8px', fontSize: 13, textAlign: 'center', fontWeight: 700 }} /> บาท/วัน ทุกระยะทาง</>}
+        </label>
         {!!editingNick && fullClearRate !== origFullClear && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginLeft: 24, fontSize: 13, color: '#f0b98c', flexWrap: 'wrap' }}>
             {fullClearRate ? 'ให้สิทธิ์' : 'ยกเลิกสิทธิ์'} ตั้งแต่เดือน
@@ -1479,11 +1508,11 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div key={w.nick} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{w.full_name} <span style={{ color: '#e8762d', fontWeight: 600, fontSize: 13 }}>({w.nick})</span></div>
-              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
+              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (เคลียร์หน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
-              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(supervisorFlat(w.nick) != null); setSupervisorAmt(String(supervisorFlat(w.nick) ?? 70)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
                 const n = reports.filter(r => r.worker === w.nick).length;
                 const msg = n > 0 ? 'ลบ ' + w.nick + '? (รายงานเดิม ' + n + ' รายการจะยังอยู่ในระบบ)' : 'ลบ ' + w.nick + '?';
@@ -2185,7 +2214,9 @@ function exportMonthlySummaryXlsx(workers, monReports, rates, monthTh, month) {
     const wearRates = new Set();
     for (const r of Object.values(byDate)) {
       const fm = fieldMoney(r);
-      if (fm > 0) { tierDays[fieldTier(r.distanceKm, r.date)] += fm / fieldRate(r.distanceKm, r.date); field += fm; }
+      const flat = r.workType === 'clear' ? supervisorFlat(r.worker) : null;
+      if (fm > 0 && flat != null) { const t = TIERS.indexOf(flat); tierDays[t === -1 ? 0 : t] += 1; field += fm; } // หัวหน้างาน: one day in the column matching his flat rate
+      else if (fm > 0) { tierDays[fieldTier(r.distanceKm, r.date)] += fm / fieldRate(r.distanceKm, r.date); field += fm; }
       const wr = wearRate(r.vehicle, rates, r.workType, r.worker);
       if (wr > 0) { wear += wr; wearDays++; wearRates.add(wr); }
     }
@@ -2447,6 +2478,9 @@ function App() {
         try { const s = JSON.parse(settings.field_rate_schedule); if (Array.isArray(s) && s.length) fieldRateSchedule = s.slice().sort((a, b) => a.from.localeCompare(b.from)); } catch (e) { /* keep the default rates */ }
       }
       setRateSchedule(fieldRateSchedule);
+      if (settings.supervisor_workers) {
+        try { const s = JSON.parse(settings.supervisor_workers); if (s && typeof s === 'object') supervisorRates = s; } catch (e) { /* no supervisors */ }
+      }
       if (settings.full_clear_schedule) {
         try { const s = JSON.parse(settings.full_clear_schedule); if (s && typeof s === 'object') fullClearSchedule = s; } catch (e) { /* fall back to the per-worker flag */ }
       }
@@ -2567,7 +2601,16 @@ function App() {
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message);
     await load();
   };
-  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear }) => {
+  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear, supervisor }) => {
+    // หัวหน้างาน flat rate lives in settings; keyed by the (possibly renamed) nick
+    const sup = { ...supervisorRates };
+    if (editingNick) delete sup[editingNick];
+    if (supervisor != null) sup[nick] = supervisor; else delete sup[nick];
+    if (JSON.stringify(sup) !== JSON.stringify(supervisorRates)) {
+      const { error } = await DB.from('field_settings').upsert({ key: 'supervisor_workers', value: JSON.stringify(sup) });
+      if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+      supervisorRates = sup;
+    }
     // keep the dated history of the 100% clear right (and carry it over on a nick rename)
     let sched = { ...fullClearSchedule }, schedChanged = false;
     if (editingNick && editingNick !== nick && sched[editingNick]) { sched[nick] = sched[editingNick]; delete sched[editingNick]; schedChanged = true; }

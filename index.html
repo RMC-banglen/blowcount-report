@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ระบบรายงานการตอกเสาเข็ม</title>
 <link rel="icon" type="image/png" href="./logo.png" />
+<!-- home-screen shortcut: company logo as the icon, opens full-screen like an app -->
+<link rel="apple-touch-icon" href="./logo.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="รายงานตอกเสา" />
+<meta name="theme-color" content="#1b1d21" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -53,6 +59,7 @@
 <!-- SheetJS 0.18.5 fork that also writes cell styles (alignment for merged cells) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <script>
 // Dedicated Supabase project for this feature (separate from index.html's project).
@@ -62,7 +69,7 @@ const DB = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 </script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const MONTHS_TH_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -451,6 +458,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '28px 16px 80px' }}>
+      {!editingReport && <HomeScreenTip />}
       {!editingReport && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           <button onClick={() => setMode('report')} style={{ flex: 1, padding: '12px 10px', borderRadius: 8, border: '1px solid ' + (mode === 'report' ? '#e8762d' : '#3a3e45'), background: mode === 'report' ? '#e8762d' : '#2c2f35', color: mode === 'report' ? '#1b1d21' : '#c8c3bb', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>รายงานประจำวัน</button>
@@ -1420,6 +1428,66 @@ function AdminPilesTab({ reports, finishedSites, onMarkFinished, onUnmarkFinishe
   );
 }
 
+// on a worker's own link: how to pin it to the phone's home screen. Hidden once they're opening it
+// from the home screen (standalone) or after they tap "ปิด" (remembered on that phone)
+function HomeScreenTip() {
+  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone;
+  const [hidden, setHidden] = useState(() => { try { return standalone || localStorage.getItem('home_tip_hidden') === '1'; } catch (e) { return !!standalone; } });
+  const [open, setOpen] = useState(false);
+  if (hidden) return null;
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const close = () => { try { localStorage.setItem('home_tip_hidden', '1'); } catch (e) { /* private mode */ } setHidden(true); };
+  return (
+    <div style={{ ...card, padding: '12px 14px', marginBottom: 14, borderLeft: '4px solid #e8762d' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 20 }}>📱</span>
+        <button onClick={() => setOpen(!open)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', color: '#e9e6e1', fontSize: 14, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+          เพิ่มลิงก์นี้ไว้ที่หน้าจอโทรศัพท์ <span style={{ color: '#e8762d' }}>{open ? '▲' : 'ดูวิธี ▼'}</span>
+        </button>
+        <button onClick={close} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>ปิด</button>
+      </div>
+      {open && (
+        <div style={{ fontSize: 14, color: '#c8c3bb', marginTop: 10, lineHeight: 1.7 }}>
+          {ios ? <>
+            <b style={{ color: '#f0b98c' }}>iPhone (Safari)</b><br />
+            1. กดปุ่ม <b>แชร์</b> (สี่เหลี่ยมมีลูกศรชี้ขึ้น) ด้านล่างจอ<br />
+            2. เลื่อนลง กด <b>เพิ่มไปยังหน้าจอโฮม</b><br />
+            3. กด <b>เพิ่ม</b> มุมขวาบน
+          </> : <>
+            <b style={{ color: '#f0b98c' }}>Android (Chrome)</b><br />
+            1. กดปุ่ม <b>⋮</b> มุมขวาบน<br />
+            2. กด <b>เพิ่มลงในหน้าจอหลัก</b><br />
+            3. กด <b>เพิ่ม</b>
+          </>}
+          <div style={{ color: '#9a958d', marginTop: 4 }}>จะได้ไอคอนโลโก้บริษัทชื่อ "รายงาน {'<'}ชื่อเล่น{'>'}" กดเข้ามากรอกรายงานได้ทันที</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// a scannable QR of one worker's link, so they can open it on their phone by pointing the camera at it
+function WorkerQrModal({ worker, url, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current || typeof QRCode === 'undefined') return;
+    ref.current.innerHTML = '';
+    try { new QRCode(ref.current, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); }
+    catch (e) { ref.current.textContent = url; } // fall back to the plain link rather than crash the tab
+  }, [url]);
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', color: '#1a1a1a', borderRadius: 12, padding: 22, textAlign: 'center', maxWidth: 320, width: '100%' }}>
+        <div style={{ fontSize: 17, fontWeight: 800 }}>{worker.full_name}</div>
+        <div style={{ fontSize: 14, color: '#e8762d', fontWeight: 700, marginBottom: 12 }}>({worker.nick})</div>
+        <div ref={ref} style={{ display: 'flex', justifyContent: 'center' }} />
+        <div style={{ fontSize: 13, color: '#555', marginTop: 12, lineHeight: 1.5 }}>ให้พนักงานเปิด <b>กล้องมือถือ</b> ส่อง QR นี้<br />แล้วกดลิงก์ที่ขึ้นมา จากนั้นเพิ่มไว้หน้าจอโทรศัพท์</div>
+        <button onClick={onClose} style={{ marginTop: 14, background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 24px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>ปิด</button>
+      </div>
+    </div>
+  );
+}
+
 function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [fullName, setFullName] = useState('');
   const [nick, setNick] = useState('');
@@ -1436,6 +1504,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [copied, setCopied] = useState(null);
 
   const linkFor = (nick) => location.origin + location.pathname + '?user=' + nick;
+  const [qrFor, setQrFor] = useState(null);
   const copyLink = (nick) => {
     navigator.clipboard && navigator.clipboard.writeText(linkFor(nick));
     setCopied(nick);
@@ -1465,6 +1534,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
+          {qrFor && <WorkerQrModal worker={qrFor} url={location.origin + location.pathname + '?user=' + encodeURIComponent(qrFor.nick)} onClose={() => setQrFor(null)} />}
           <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>จัดการรายชื่อพนักงาน</div>
           <div style={{ fontSize: 13, color: '#9a958d' }}>ทั้งหมด {workers.length} คน · ชื่อเล่นใช้เป็นลิงก์ประจำตัว (?user=ชื่อเล่น)</div>
         </div>
@@ -1516,6 +1586,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
               <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (ตรวจหน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => setQrFor(w)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>QR</button>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
               <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(supervisorFlat(w.nick) != null); setSupervisorAmt(String(supervisorFlat(w.nick) ?? 70)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
@@ -2515,7 +2586,13 @@ function App() {
 
       const params = new URLSearchParams(location.search);
       const u = params.get('user');
-      if (u && (wRes.data || []).some(w => w.nick === u)) { setView('form'); setWorker(u); }
+      if (u && (wRes.data || []).some(w => w.nick === u)) {
+        setView('form'); setWorker(u);
+        // name the home-screen shortcut after the worker so each phone's icon is labelled with their name
+        document.title = 'รายงาน ' + u;
+        const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+        if (appTitle) appTitle.setAttribute('content', 'รายงาน ' + u);
+      }
     } catch (e) {
       console.error(e);
       setLoadError('เชื่อมต่อ Supabase ไม่สำเร็จ: ' + (e.message || e));

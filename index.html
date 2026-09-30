@@ -69,9 +69,22 @@ const SUPABASE_KEY = 'sb_publishable_ezCdw1aAEeqbPkRw5CgmUg_pyuHuXbQ';
 // count requests in flight so the auto-updater never reloads mid-save (see UpdateBanner). Patched
 // here because supabase-js captures fetch when the client is created
 var requestsInFlight = 0;
+// Also attaches the admin session token (from admin_login, see supabase-security.sql) to Supabase
+// requests — the database only accepts admin changes that carry a valid one
+function adminToken() { try { return sessionStorage.getItem('field_admin_token') || ''; } catch (e) { return ''; } }
 (() => {
   const origFetch = window.fetch.bind(window);
-  window.fetch = (...args) => { requestsInFlight++; return origFetch(...args).finally(() => { requestsInFlight--; }); };
+  window.fetch = (input, init) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const token = adminToken();
+    if (token && url.startsWith(SUPABASE_URL)) {
+      const headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined));
+      headers.set('x-admin-token', token);
+      init = { ...(init || {}), headers };
+    }
+    requestsInFlight++;
+    return origFetch(input, init).finally(() => { requestsInFlight--; });
+  };
 })();
 const DB = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 </script>
@@ -967,7 +980,8 @@ function AdminLoginView({ admins, onSetup, onLogin }) {
   };
   const submitLogin = async (p) => {
     const ok = await onLogin(selected, p ?? pin);
-    if (!ok) { setError('รหัส PIN ไม่ถูกต้อง'); setPin(''); }
+    if (ok === 'locked') { setError('ใส่รหัส PIN ผิดหลายครั้ง ระบบล็อกชื่อนี้ไว้ 15 นาที กรุณาลองใหม่ภายหลัง'); setPin(''); }
+    else if (!ok) { setError('รหัส PIN ไม่ถูกต้อง'); setPin(''); }
   };
   const onKey = (e, fn) => { if (e.key === 'Enter') fn(); };
   useEffect(() => { if (selected && pin.length === 4) submitLogin(pin); }, [pin, selected]);
@@ -2763,6 +2777,28 @@ function App() {
 
   useEffect(() => { load(); }, [load]);
 
+  // while logged in as admin, make sure the database still accepts the session (12h expiry, or a
+  // login from before supabase-security.sql was run, which has no token) — otherwise sign out
+  // cleanly instead of letting every save fail
+  useEffect(() => {
+    if (!adminAuthed) return;
+    const check = async () => {
+      const { data, error } = await DB.rpc('admin_whoami');
+      if (error) return; // function not installed yet (old mode) or offline — leave it
+      if (!data) {
+        sessionStorage.removeItem('field_admin_token');
+        sessionStorage.removeItem('field_admin_authed');
+        sessionStorage.removeItem('field_admin_name');
+        setAdminAuthed(false);
+        setAdminName('');
+        alert('หมดเวลาเข้าสู่ระบบ กรุณาใส่รหัส PIN อีกครั้ง');
+      }
+    };
+    check();
+    const t = setInterval(check, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [adminAuthed]);
+
   const knownSites = useMemo(() => [...new Set(reports.map(r => r.site.trim()).filter(Boolean))], [reports]);
   const knownPiles = useMemo(() => [...new Set(reports.flatMap(r => r.items.map(i => i.pile.trim())).filter(Boolean))], [reports]);
   const workerRec = workers.find(w => w.nick === worker);
@@ -2906,13 +2942,28 @@ function App() {
     setRates(next);
     await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
   };
-  const saveAdmins = async (list) => {
-    const { error } = await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(list) });
-    if (error) { alert('บันทึกไม่สำเร็จ: ' + error.message); return false; }
-    setAdmins(list);
+  // Admin PINs are checked by the database (supabase-security.sql): admin_login hands back a session
+  // token that fetch attaches to every request. Until that SQL has been run the functions don't
+  // exist, so each call falls back to the old in-page check
+  const missingFn = (error) => !!error && (error.code === 'PGRST202' || /Could not find the function/i.test(error.message || ''));
+  // list: admins, entries with a `hash` get that PIN set; renames: { oldName: newName }
+  const saveAdmins = async (list, renames = {}) => {
+    const pins = {};
+    for (const a of list) if (a.hash) pins[a.name] = a.hash;
+    const users = list.map(({ hash, ...rest }) => rest);
+    const { error } = await DB.rpc('admin_save_users', { p_users: users, p_pins: pins, p_renames: renames });
+    if (missingFn(error)) {
+      const { error: e2 } = await DB.from('field_settings').upsert({ key: 'admin_users', value: JSON.stringify(list) });
+      if (e2) { alert('บันทึกไม่สำเร็จ: ' + e2.message); return false; }
+      setAdmins(list);
+      return true;
+    }
+    if (error) { alert('บันทึกไม่สำเร็จ: ' + (error.message === 'forbidden' ? 'เฉพาะผู้ใช้หลักเท่านั้น' : error.message)); return false; }
+    setAdmins(users);
     return true;
   };
-  const beginSession = (name) => {
+  const beginSession = (name, token) => {
+    if (token) sessionStorage.setItem('field_admin_token', token); else sessionStorage.removeItem('field_admin_token');
     sessionStorage.setItem('field_admin_authed', '1');
     sessionStorage.setItem('field_admin_name', name);
     setAdminAuthed(true);
@@ -2920,18 +2971,28 @@ function App() {
     const allowed = allowedTabKeysFor(admins.find(a => a.name === name));
     setTab(allowed.includes('reports') ? 'reports' : (allowed[0] || 'reports'));
   };
-  const setupAdmin = async (name, pw, position) => {
-    const hash = await sha256Hex(pw);
-    if (await saveAdmins([{ name, hash, role: 'owner', position: position || '' }])) beginSession(name);
-  };
+  // true, false (wrong PIN) or 'locked' (too many wrong PINs)
   const loginAdmin = async (name, pw) => {
     const hash = await sha256Hex(pw);
-    const rec = admins.find(a => a.name === name && a.hash === hash);
-    if (!rec) return false;
-    beginSession(name);
+    const { data, error } = await DB.rpc('admin_login', { p_name: name, p_hash: hash });
+    if (missingFn(error)) {
+      const rec = admins.find(a => a.name === name && a.hash === hash);
+      if (!rec) return false;
+      beginSession(name, null);
+      return true;
+    }
+    if (error) return /locked/.test(error.message || '') ? 'locked' : false;
+    if (!data) return false;
+    beginSession(name, data);
     return true;
   };
+  const setupAdmin = async (name, pw, position) => {
+    const hash = await sha256Hex(pw);
+    if (await saveAdmins([{ name, hash, role: 'owner', position: position || '' }])) await loginAdmin(name, pw);
+  };
   const logoutAdmin = () => {
+    // end the session on the server first (the request needs the token), then forget it
+    if (adminToken()) DB.rpc('admin_logout').then(() => {}, () => {}).finally(() => sessionStorage.removeItem('field_admin_token'));
     sessionStorage.removeItem('field_admin_authed');
     sessionStorage.removeItem('field_admin_name');
     setAdminAuthed(false);
@@ -2945,7 +3006,18 @@ function App() {
     await saveAdmins(admins.filter(a => a.name !== name));
   };
   const editAdmin = async (oldName, newName, newHash, newPosition, newCanConfirmMonth, newTabs) => {
-    const ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position, canConfirmMonth: !!newCanConfirmMonth, tabs: newTabs || a.tabs } : a));
+    const me = admins.find(a => a.name === adminName);
+    let ok;
+    if (me && me.role !== 'owner' && oldName === adminName) {
+      // a non-owner can only change their own name / position / PIN — the database enforces the same
+      const { error } = await DB.rpc('admin_update_self', { p_new_name: newName, p_position: newPosition ?? me.position ?? '', p_hash: newHash || null });
+      if (!missingFn(error)) {
+        if (error) { alert('บันทึกไม่สำเร็จ: ' + (error.message === 'name taken' ? 'ชื่อนี้มีผู้ใช้แล้ว' : error.message)); return false; }
+        setAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, position: newPosition ?? a.position } : a));
+        ok = true;
+      }
+    }
+    if (ok === undefined) ok = await saveAdmins(admins.map(a => a.name === oldName ? { ...a, name: newName, hash: newHash || a.hash, position: newPosition ?? a.position, canConfirmMonth: !!newCanConfirmMonth, tabs: newTabs || a.tabs } : a), oldName !== newName ? { [oldName]: newName } : {});
     if (ok && oldName === adminName && newName !== oldName) {
       sessionStorage.setItem('field_admin_name', newName);
       setAdminName(newName);

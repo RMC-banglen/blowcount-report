@@ -66,6 +66,13 @@
 // Dedicated Supabase project for this feature (separate from index.html's project).
 const SUPABASE_URL = 'https://mezhhbzcuwyurquqptys.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_ezCdw1aAEeqbPkRw5CgmUg_pyuHuXbQ';
+// count requests in flight so the auto-updater never reloads mid-save (see UpdateBanner). Patched
+// here because supabase-js captures fetch when the client is created
+var requestsInFlight = 0;
+(() => {
+  const origFetch = window.fetch.bind(window);
+  window.fetch = (...args) => { requestsInFlight++; return origFetch(...args).finally(() => { requestsInFlight--; }); };
+})();
 const DB = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 </script>
 
@@ -344,6 +351,12 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
 
   const blankLeave = { date: todayLocalIso(), leaveType: 'sunday', reason: '' };
   const [lf, setLf] = useState(blankLeave);
+  // tell the auto-updater whether reloading now would throw away something typed (see UpdateBanner)
+  useEffect(() => {
+    formDirty = !!editingReport || JSON.stringify(f) !== JSON.stringify(blank) || JSON.stringify(lf) !== JSON.stringify(blankLeave);
+    formTracked = true;
+    return () => { formDirty = false; formTracked = false; };
+  });
   const [leaveError, setLeaveError] = useState('');
   const [leaveSavedFlash, setLeaveSavedFlash] = useState(false);
   const [editingLeave, setEditingLeave] = useState(null);
@@ -1434,8 +1447,26 @@ function AdminPilesTab({ reports, finishedSites, onMarkFinished, onUnmarkFinishe
 // the foreground, and every 30 min — and offer a one-tap update. It never reloads on its own, so a
 // half-typed report isn't lost. No version number to bump: the page's own script is the version.
 const APP_CODE = (() => { const s = document.querySelector('script[type="text/babel"]'); return s ? s.textContent : ''; })();
+// "is it safe to reload?" — the worker form flags unsaved input, and any typing anywhere (e.g. an
+// admin mid-edit) holds the reload off for a minute
+let formDirty = false;
+let formTracked = false; // the worker form knows exactly when it's clean, so no typing grace period there
+let lastInputAt = 0;
+document.addEventListener('input', () => { lastInputAt = Date.now(); }, true);
+// requestsInFlight (counted where the Supabase client is created): the form clears the moment
+// "บันทึก" is pressed, before the save reaches the server, and a reload then would cut it off
+const safeToReload = () => !formDirty && requestsInFlight === 0 && (formTracked || Date.now() - lastInputAt > 60000);
 function UpdateBanner() {
   const [hasUpdate, setHasUpdate] = useState(false);
+  // once a new version is found, reload by itself as soon as nothing unsaved is on screen — right
+  // away if the form is empty, otherwise straight after the report is saved
+  useEffect(() => {
+    if (!hasUpdate) return;
+    const tryReload = () => { if (safeToReload()) location.reload(); };
+    tryReload();
+    const t = setInterval(tryReload, 5000);
+    return () => clearInterval(t);
+  }, [hasUpdate]);
   useEffect(() => {
     let last = 0;
     const check = async () => {
@@ -1458,9 +1489,8 @@ function UpdateBanner() {
   if (!hasUpdate) return null;
   return (
     <div className="no-print" style={{ position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 200, maxWidth: 520, margin: '0 auto', background: '#e8762d', color: '#1b1d21', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 6px 24px rgba(0,0,0,.4)' }}>
-      <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>มีเวอร์ชันใหม่ของระบบ</span>
+      <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>มีเวอร์ชันใหม่ของระบบ<br /><span style={{ fontWeight: 500, fontSize: 12 }}>จะอัปเดตให้อัตโนมัติหลังบันทึกรายงาน</span></span>
       <button onClick={() => location.reload()} style={{ background: '#1b1d21', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>อัปเดตเลย</button>
-      <button onClick={() => setHasUpdate(false)} style={{ background: 'none', border: 'none', color: '#1b1d21', fontSize: 13, cursor: 'pointer' }}>ภายหลัง</button>
     </div>
   );
 }

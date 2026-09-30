@@ -200,12 +200,21 @@ function fullClearOn(nick, iso, flag) {
 function fieldFactor(workType, fullClearRate, iso) { return (workType === 'clear' || workType === 'bored_move') ?(fullClearRate ? 1 : (Number(fieldRatesFor(iso).clearPct) || 0) / 100) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
 // running 2 rigs doubles ค่าออกสนาม (Sundays/holidays don't — see countHolidayWork)
 function doubleFieldPay(r) { return !!r.dualRig; }
-// site supervisors (หัวหน้างาน): { nick: baht } from field_settings.supervisor_workers. Their link only
-// offers เคลียร์หน้างาน / อยู่บริษัท with no distance, and เคลียร์หน้างาน pays this flat amount at any distance
-let supervisorRates = {};
-function supervisorFlat(nick) { return supervisorRates[nick] != null ? Number(supervisorRates[nick]) || 0 : null; }
+// site supervisors (หัวหน้างาน): their link only offers ตรวจหน้างาน / อยู่บริษัท with no distance, and
+// ตรวจหน้างาน pays a flat amount at any distance. Dated per worker so granting/removing/changing it
+// from a month on leaves earlier months alone: { nick: [{ from: 'YYYY-MM', amt: baht | null }] }
+// (null = not a supervisor from then), from field_settings.supervisor_schedule
+let supervisorSchedule = {};
+function supervisorFlat(nick, iso) {
+  const list = supervisorSchedule[nick];
+  if (!list || !list.length) return null;
+  const month = (iso || todayLocalIso()).slice(0, 7);
+  let amt = list[0].amt;
+  for (const e of list) if (e.from <= month) amt = e.amt;
+  return amt == null ? null : Number(amt) || 0;
+}
 // a supervisor's 'clear' day is really inspecting the site, so it's labelled differently everywhere
-function clearLabel(nick) { return supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่หน้างาน'; }
+function clearLabel(nick, iso) { return supervisorFlat(nick, iso) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่หน้างาน'; }
 
 // เสาเข็มเจาะ (bored piles): only workers ticked "ดูหน้างานเข็มเจาะ" (field_settings.bored_workers) get
 // it in their form. work types: 'bored' = drilling (full pay, items of diameter/length/count),
@@ -221,7 +230,7 @@ const boredItemsFrom = (items, keepCount) => items.length
 // one place for the Thai name of a report's work type (lists, PDF, Excel)
 function workTypeLabel(r) {
   switch (r.workType) {
-    case 'clear': return clearLabel(r.worker);
+    case 'clear': return clearLabel(r.worker, r.date);
     case 'office': return 'อยู่บริษัท ไม่ได้ออกหน้างาน';
     case 'office_errand': return 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)';
     case 'none': return 'ไปหน้างานแต่ไม่ได้ตอก';
@@ -231,7 +240,7 @@ function workTypeLabel(r) {
   }
 }
 function fieldMoney(r) {
-  const flat = supervisorFlat(r.worker);
+  const flat = supervisorFlat(r.worker, r.date);
   if (flat != null && r.workType === 'clear') return flat;
   return fieldRate(r.distanceKm, r.date) * fieldFactor(r.workType || 'pile', fullClearOn(r.worker, r.date, r.fullClearRate), r.date) * (doubleFieldPay(r) ? 2 : 1);
 }
@@ -242,11 +251,24 @@ function distanceCorrectionMoney(r) {
   const factor = fieldFactor(r.workType || 'pile', fullClearOn(r.worker, r.date, r.fullClearRate), r.date) * (doubleFieldPay(r) ? 2 : 1);
   return (fieldRate(r.distanceKm, r.date) - fieldRate(r.originalDistanceKm, r.date)) * factor;
 }
-// rates.carByWorker: per-worker car rate overriding the default (e.g. the site supervisor's 380/day)
-function wearRate(vehicle, rates, workType, worker) {
+// ค่าสึกหรอ rates as dated snapshots, like the field-pay schedule: each { from: 'YYYY-MM', car, moto,
+// carByWorker: { nick: baht } } applies from its month until the next, so a rate change never
+// rewrites paid months. From field_settings.wear_rate_schedule, edited in the ค่ารถออกสนาม tab
+const DEFAULT_WEAR_RATES = { from: '2000-01', car: 250, moto: 100, carByWorker: {} };
+let wearSchedule = [DEFAULT_WEAR_RATES];
+function wearRatesFor(iso) {
+  const month = (iso || todayLocalIso()).slice(0, 7);
+  let cur = wearSchedule[0];
+  for (const s of wearSchedule) if (s.from <= month) cur = s; // kept sorted by from
+  return cur;
+}
+// carByWorker: per-worker car rate overriding the default (e.g. the site supervisor's 380/day).
+// With a report date the rates of that month apply; without one, the `rates` passed in
+function wearRate(vehicle, rates, workType, worker, iso) {
   if (workType === 'office') return 0;
-  if (vehicle === 'car') { const own = rates.carByWorker && rates.carByWorker[worker]; return Number(own != null ? own : rates.car) || 0; }
-  return vehicle === 'moto' ? (Number(rates.moto) || 0) : 0;
+  const r = iso ? wearRatesFor(iso) : rates;
+  if (vehicle === 'car') { const own = r.carByWorker && r.carByWorker[worker]; return Number(own != null ? own : r.car) || 0; }
+  return vehicle === 'moto' ? (Number(r.moto) || 0) : 0;
 }
 function vehicleTh(k) { const v = VEHICLES.find(v => v.key === k); return v ? v.label : k; }
 function num(n) { return (Number(n) || 0).toLocaleString('th-TH'); }
@@ -620,7 +642,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const myLeaveDays = myLeavesThisMonth.length;
   const myTotalPiles = mine.reduce((sum, r) => sum + r.items.reduce((s, it) => s + (Number(it.count) || 0), 0), 0);
   const myField = Object.values(myByDate).reduce((sum, r) => sum + fieldMoney(r), 0);
-  const myWear = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType, r.worker), 0);
+  const myWear = Object.values(myByDate).reduce((sum, r) => sum + wearRate(r.vehicle, rates, r.workType, r.worker, r.date), 0);
   const myMoney = myField + myWear;
   const myLeavesInMonth = myLeaves.filter(l => l.date.slice(0, 7) === historyMonth);
   const historyItems = [
@@ -1558,7 +1580,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{num(it.count)} ต้น <span style={{ color: '#9a958d', fontWeight: 500 }}>(สะสม {num(cumFor(reports, r.site, it.pile, r.date, null))})</span></span>
                 </div>
               ))}
-              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? (supervisorFlat(r.worker) != null ? 'ตรวจหน้างาน (หัวหน้างาน)' : 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)') : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : workTypeLabel(r)}</div>}
+              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? (supervisorFlat(r.worker, r.date) != null ? 'ตรวจหน้างาน (หัวหน้างาน)' : 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)') : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : workTypeLabel(r)}</div>}
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 6 }}>{r.timeIn ? 'เข้า ' + r.timeIn + ' · ออก ' + r.timeOut + ' · ' : ''}{vehicleTh(r.vehicle)} · {r.distanceLegs && r.distanceLegs.length > 1 ? r.distanceLegs.map(l => l.km).join('+') + '=' + num(r.distanceKm) + ' กม.' : (r.distanceKm ? num(r.distanceKm) + ' กม.' : '-')}{!!r.tollFee && <> · ค่าทางด่วน {num(r.tollFee)} บาท</>}</div>
               {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {r.note}</div>}
               {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (
@@ -1767,6 +1789,10 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [supervisorAmt, setSupervisorAmt] = useState('70');
   const [isBored, setIsBored] = useState(false);
+  const [origSup, setOrigSup] = useState(null); // supervisor amount as of today, before this edit
+  const [supFrom, setSupFrom] = useState(todayLocalIso().slice(0, 7));
+  const supNow = isSupervisor ? Number(supervisorAmt) : null;
+  const supChanged = !!editingNick && supNow !== origSup;
   const [fullClearFrom, setFullClearFrom] = useState(todayLocalIso().slice(0, 7));
   const [error, setError] = useState('');
   const fullClearToday = w => fullClearOn(w.nick, todayLocalIso(), w.full_clear_rate);
@@ -1796,10 +1822,10 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
     const changed = !!editingNick && fullClearRate !== origFullClear;
     if (changed && !fullClearFrom) return setError('กรุณาเลือกเดือนที่เริ่มมีผลของสิทธิ์เคลียร์พื้นที่ 100%');
     if (isSupervisor && !(Number(supervisorAmt) >= 0 && supervisorAmt !== '')) return setError('กรุณาใส่ค่าออกสนามของหัวหน้างาน');
-    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear, supervisor: isSupervisor ? Number(supervisorAmt) : null, bored: isBored });
+    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear, supervisor: supNow, supervisorFrom: supChanged ? supFrom : null, bored: isBored });
     cancel();
   };
-  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(false); setSupervisorAmt('70'); setIsBored(false); setError(''); };
+  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(false); setSupervisorAmt('70'); setIsBored(false); setOrigSup(null); setSupFrom(todayLocalIso().slice(0, 7)); setError(''); };
 
   return (
     <div>
@@ -1844,8 +1870,15 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', flexWrap: 'wrap' }}>
           <input type="checkbox" checked={isSupervisor} onChange={e => setIsSupervisor(e.target.checked)} />
           หัวหน้างาน — ลิงก์มีแค่ "ตรวจหน้างาน" กับ "อยู่บริษัท" ไม่ต้องกรอกระยะทาง
-          {isSupervisor && <>· เคลียร์หน้างานได้ <input type="number" min="0" value={supervisorAmt} onChange={e => setSupervisorAmt(e.target.value)} style={{ ...inputStyle, width: 80, padding: '5px 8px', fontSize: 13, textAlign: 'center', fontWeight: 700 }} /> บาท/วัน ทุกระยะทาง</>}
+          {isSupervisor && <>· ตรวจหน้างานได้ <input type="number" min="0" value={supervisorAmt} onChange={e => setSupervisorAmt(e.target.value)} style={{ ...inputStyle, width: 80, padding: '5px 8px', fontSize: 13, textAlign: 'center', fontWeight: 700 }} /> บาท/วัน ทุกระยะทาง</>}
         </label>
+        {supChanged && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginLeft: 24, fontSize: 13, color: '#f0b98c', flexWrap: 'wrap' }}>
+            {origSup == null ? 'เป็นหัวหน้างาน' : supNow == null ? 'ยกเลิกหัวหน้างาน' : 'เปลี่ยนเป็น ' + num(supNow) + ' บาท'} ตั้งแต่เดือน
+            <input type="month" value={supFrom} onChange={e => setSupFrom(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '6px 10px', fontSize: 13 }} />
+            <span style={{ color: '#9a958d' }}>เดือนก่อนหน้านั้นยังคิดแบบเดิม</span>
+          </label>
+        )}
         {!!editingNick && fullClearRate !== origFullClear && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, marginLeft: 24, fontSize: 13, color: '#f0b98c', flexWrap: 'wrap' }}>
             {fullClearRate ? 'ให้สิทธิ์' : 'ยกเลิกสิทธิ์'} ตั้งแต่เดือน
@@ -1866,7 +1899,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => setQrFor(w)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>QR</button>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
-              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(supervisorFlat(w.nick) != null); setSupervisorAmt(String(supervisorFlat(w.nick) ?? 70)); setIsBored(isBoredWorker(w.nick)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(supervisorFlat(w.nick) != null); setSupervisorAmt(String(supervisorFlat(w.nick) ?? 70)); setOrigSup(supervisorFlat(w.nick)); setSupFrom(todayLocalIso().slice(0, 7)); setIsBored(isBoredWorker(w.nick)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
                 const n = reports.filter(r => r.worker === w.nick).length;
                 const msg = n > 0 ? 'ลบ ' + w.nick + '? (รายงานเดิม ' + n + ' รายการจะยังอยู่ในระบบ)' : 'ลบ ' + w.nick + '?';
@@ -1890,7 +1923,7 @@ function AdminMonthlyTab({ workers, reports, rates, onPrint }) {
     for (const r of mine) if (!byDate[r.date]) byDate[r.date] = r;
     const days = Object.keys(byDate).length;
     let money = 0;
-    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType, byDate[d].worker) + fieldMoney(byDate[d]);
+    for (const d of Object.keys(byDate)) money += wearRate(byDate[d].vehicle, rates, byDate[d].workType, byDate[d].worker, byDate[d].date) + fieldMoney(byDate[d]);
     const agg = {}; let total = 0;
     for (const r of mine) for (const it of r.items) {
       const k = r.site + '||' + it.pile;
@@ -2136,31 +2169,45 @@ function FieldRatesCard({ month, monthTh, schedule, canEdit, onSave }) {
   );
 }
 
-// ค่าสึกหรอ rates, edited as a draft and saved with a button — typing used to save every keystroke,
-// so a half-typed value (or a failed save) went live without anyone noticing
-function WearRatesCard({ rates, workers, onSave }) {
-  const toDraft = r => ({ car: String(r.car), moto: String(r.moto), carByWorker: { ...(r.carByWorker || {}) } });
-  const [draft, setDraft] = useState(() => toDraft(rates));
+// ค่าสึกหรอ rates for the month picked in the tab, edited as a draft and saved with a button (typing
+// used to save every keystroke). Saving asks from which month the rates apply, so paid months keep
+// their rates; earlier sets are listed as history and can be removed
+function WearRatesCard({ month, monthTh, schedule, workers, onSave }) {
+  const sorted = schedule.slice().sort((a, b) => a.from.localeCompare(b.from));
+  const cur = (() => { let c = sorted[0]; for (const s of sorted) if (s.from <= month) c = s; return c; })();
+  const toDraft = r => ({ car: String(r.car), moto: String(r.moto), carByWorker: Object.fromEntries(Object.entries(r.carByWorker || {}).map(([k, v]) => [k, String(v)])) });
+  const [draft, setDraft] = useState(() => toDraft(cur));
+  const [from, setFrom] = useState(month);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  useEffect(() => { setDraft(toDraft(rates)); }, [rates]); // re-sync after a save / reload
-  const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(rates));
+  const curKey = JSON.stringify(cur);
+  useEffect(() => { setDraft(toDraft(cur)); setFrom(month); }, [curKey, month]); // re-sync after a save / month change
+  const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(cur));
   const byWorker = draft.carByWorker;
   const numStyle = { background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' };
+  const edit = patch => { setDraft({ ...draft, ...patch }); setMsg(''); };
+  const nameOf = nick => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const save = async () => {
     const vals = [draft.car, draft.moto, ...Object.values(byWorker)];
     if (vals.some(v => v === '' || !(Number(v) >= 0))) return setMsg('กรุณาใส่ตัวเลขให้ครบทุกช่อง');
+    if (!from) return setMsg('กรุณาเลือกเดือนที่เริ่มมีผล');
+    if (!confirm('ใช้อัตราค่าสึกหรอนี้ตั้งแต่เดือน ' + monthThOf(from) + ' เป็นต้นไป?\nเดือนก่อนหน้านั้นยังใช้อัตราเดิม')) return;
     setSaving(true); setMsg('');
-    const ok = await onSave({ car: Number(draft.car), moto: Number(draft.moto), carByWorker: Object.fromEntries(Object.entries(byWorker).map(([k, v]) => [k, Number(v)])) });
+    const entry = { from, car: Number(draft.car), moto: Number(draft.moto), carByWorker: Object.fromEntries(Object.entries(byWorker).map(([k, v]) => [k, Number(v)])) };
+    const ok = await onSave([...sorted.filter(s => s.from !== from), entry]);
     setSaving(false);
-    setMsg(ok ? '✓ บันทึกแล้ว' : '');
+    setMsg(ok ? '✓ บันทึกแล้ว — มีผลตั้งแต่ ' + monthThOf(from) : '');
+  };
+  const removeSet = s => {
+    if (!confirm('ลบอัตราที่เริ่ม ' + monthThOf(s.from) + '?\nเดือนเหล่านั้นจะกลับไปใช้อัตราก่อนหน้า')) return;
+    onSave(sorted.filter(x => x !== s));
   };
   return (
     <div style={{ ...card, padding: '14px 18px' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', marginBottom: 10 }}>ค่าสึกหรอต่อวัน (รถส่วนตัว)</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', marginBottom: 10 }}>ค่าสึกหรอต่อวัน (รถส่วนตัว) · เดือน {monthTh}</div>
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>รถยนต์ <input type="number" min="0" value={draft.car} onChange={e => { setDraft({ ...draft, car: e.target.value }); setMsg(''); }} style={numStyle} /> บาท</label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>มอเตอร์ไซค์ <input type="number" min="0" value={draft.moto} onChange={e => { setDraft({ ...draft, moto: e.target.value }); setMsg(''); }} style={numStyle} /> บาท</label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>รถยนต์ <input type="number" min="0" value={draft.car} onChange={e => edit({ car: e.target.value })} style={numStyle} /> บาท</label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>มอเตอร์ไซค์ <input type="number" min="0" value={draft.moto} onChange={e => edit({ moto: e.target.value })} style={numStyle} /> บาท</label>
       </div>
       <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', margin: '14px 0 8px' }}>อัตรารถยนต์เฉพาะคน</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2168,31 +2215,43 @@ function WearRatesCard({ rates, workers, onSave }) {
           const w = workers.find(w => w.nick === nick);
           return (
             <div key={nick} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, flexWrap: 'wrap' }}>
-              <span style={{ minWidth: 120 }}>{w ? w.full_name + ' (' + nick + ')' : nick}</span>
-              <input type="number" min="0" value={byWorker[nick]} onChange={e => { setDraft({ ...draft, carByWorker: { ...byWorker, [nick]: e.target.value } }); setMsg(''); }} style={numStyle} /> บาท
-              <button onClick={() => { const next = { ...byWorker }; delete next[nick]; setDraft({ ...draft, carByWorker: next }); setMsg(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+              <span style={{ minWidth: 120 }}>{nameOf(nick)}</span>
+              <input type="number" min="0" value={byWorker[nick]} onChange={e => edit({ carByWorker: { ...byWorker, [nick]: e.target.value } })} style={numStyle} /> บาท
+              <button onClick={() => { const next = { ...byWorker }; delete next[nick]; edit({ carByWorker: next }); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
               {!w && <span style={{ fontSize: 12, color: '#f0b3a8', width: '100%' }}>⚠ ไม่พบพนักงานชื่อเล่น "{nick}" ในระบบ อัตรานี้จึงไม่มีผลกับใคร — กดลบ แล้วเพิ่มใหม่จากรายชื่อด้านล่าง</span>}
             </div>
           );
         })}
-        <select value="" onChange={e => { if (e.target.value) { setDraft({ ...draft, carByWorker: { ...byWorker, [e.target.value]: draft.car } }); setMsg(''); } }} style={{ ...inputStyle, width: 'auto', padding: '8px 10px', fontSize: 13 }}>
+        <select value="" onChange={e => { if (e.target.value) edit({ carByWorker: { ...byWorker, [e.target.value]: draft.car } }); }} style={{ ...inputStyle, width: 'auto', padding: '8px 10px', fontSize: 13 }}>
           <option value="">+ เพิ่มพนักงานที่ได้อัตราพิเศษ</option>
           {workers.filter(w => byWorker[w.nick] == null).map(w => <option key={w.nick} value={w.nick}>{w.full_name} ({w.nick})</option>)}
         </select>
       </div>
       {(dirty || msg) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          {dirty && <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#f0b98c' }}>มีผลตั้งแต่เดือน <input type="month" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '6px 8px', fontSize: 13 }} /></label>}
           {dirty && <button onClick={save} disabled={saving} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>}
-          {dirty && !saving && <button onClick={() => { setDraft(toDraft(rates)); setMsg(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
-          {dirty && <span style={{ fontSize: 12, color: '#f0b98c' }}>มีการแก้ไขที่ยังไม่ได้บันทึก</span>}
+          {dirty && !saving && <button onClick={() => { setDraft(toDraft(cur)); setMsg(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
           {msg && <span style={{ fontSize: 13, color: msg.startsWith('✓') ? '#6dbf5b' : '#f0b3a8' }}>{msg}</span>}
+        </div>
+      )}
+      {sorted.length > 1 && (
+        <div style={{ marginTop: 12, borderTop: '1px dotted #3a3e45', paddingTop: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#9a958d', marginBottom: 4 }}>ประวัติอัตรา</div>
+          {sorted.slice().reverse().map((s, i) => (
+            <div key={s.from} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#c8c3bb', padding: '3px 0', flexWrap: 'wrap' }}>
+              <span style={{ minWidth: 110 }}>{i === sorted.length - 1 ? 'อัตราเริ่มต้น' : 'ตั้งแต่ ' + monthThOf(s.from)}</span>
+              <span style={{ flex: 1 }}>รถยนต์ {num(s.car)} · มอเตอร์ไซค์ {num(s.moto)}{Object.keys(s.carByWorker || {}).length ? ' · ' + Object.entries(s.carByWorker).map(([n, v]) => n + ' ' + num(v)).join(', ') : ''}</span>
+              {i < sorted.length - 1 && <button onClick={() => removeSet(s)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}>ลบ</button>}
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function AdminCarTab({ workers, reports, rates, onSetRates, onPrint, rateSchedule, onSaveRateSchedule, canEditRates }) {
+function AdminCarTab({ workers, reports, rates, onSaveWearSchedule, onPrint, rateSchedule, onSaveRateSchedule, canEditRates }) {
   const [month, setMonth] = useState(todayLocalMonth());
   const monthReports = reports.filter(r => r.date.slice(0, 7) === month);
   const carByWorker = rates.carByWorker || {};
@@ -2201,7 +2260,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint, rateSchedul
     for (const r of monthReports) if (r.worker === w.nick && !byDate[r.date]) byDate[r.date] = r;
     const dates = Object.keys(byDate);
     let wear = 0, field = 0, toll = 0;
-    for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates, byDate[d].workType, byDate[d].worker); field += fieldMoney(byDate[d]); toll += Number(byDate[d].tollFee) || 0; }
+    for (const d of dates) { wear += wearRate(byDate[d].vehicle, rates, byDate[d].workType, byDate[d].worker, byDate[d].date); field += fieldMoney(byDate[d]); toll += Number(byDate[d].tollFee) || 0; }
     return { nick: w.nick, fullName: w.full_name, days: dates.length, wear, field, toll, money: wear + field };
   }).filter(c => c.days > 0);
   const grandTotal = rows.reduce((a, c) => a + c.money, 0);
@@ -2222,7 +2281,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint, rateSchedul
       </div>
 
       <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-        <WearRatesCard rates={rates} workers={workers} onSave={onSetRates} />
+        <WearRatesCard month={month} monthTh={monthTh} schedule={rates.schedule || [rates]} workers={workers} onSave={onSaveWearSchedule} />
         <FieldRatesCard month={month} monthTh={monthTh} schedule={rateSchedule} canEdit={canEditRates} onSave={onSaveRateSchedule} />
       </div>
 
@@ -2603,10 +2662,10 @@ function exportMonthlySummaryXlsxNow(workers, monReports, rates, monthTh, month)
     const wearRates = new Set();
     for (const r of Object.values(byDate)) {
       const fm = fieldMoney(r);
-      const flat = r.workType === 'clear' ? supervisorFlat(r.worker) : null;
+      const flat = r.workType === 'clear' ? supervisorFlat(r.worker, r.date) : null;
       if (fm > 0 && flat != null) { const t = TIERS.indexOf(flat); tierDays[t === -1 ? 0 : t] += 1; field += fm; } // หัวหน้างาน: one day in the column matching his flat rate
       else if (fm > 0) { tierDays[fieldTier(r.distanceKm, r.date)] += fm / fieldRate(r.distanceKm, r.date); field += fm; }
-      const wr = wearRate(r.vehicle, rates, r.workType, r.worker);
+      const wr = wearRate(r.vehicle, rates, r.workType, r.worker, r.date);
       if (wr > 0) { wear += wr; wearDays++; wearRates.add(wr); }
     }
     const { sundays, holidays } = countHolidayWork(mine);
@@ -2722,16 +2781,16 @@ async function exportXlsxPerWorkerNow(filtered, reports, rates, leaves, workers,
 function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ระยะทางไป-กลับ(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ', 'ทำงานวันหยุด']];
-  const wtTh = (w, nick) => w === 'clear' ? (supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่') : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : w === 'bored' || w === 'bored_move' ? workTypeLabel({ workType: w }) : 'ตอกเสาเข็ม';
+  const wtTh = (w, nick, iso) => w === 'clear' ? (supervisorFlat(nick, iso) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่') : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : w === 'bored' || w === 'bored_move' ? workTypeLabel({ workType: w }) : 'ตอกเสาเข็ม';
   const dataRows = [];
   // money is paid once per worker+date (same rule as openPrintReports' totals) — extra pile items or a
   // second report on the same day get blank distance/money cells so summing the columns doesn't double it
   const payingReport = {};
   for (const r of filtered) { const k = r.worker + '|' + r.date; if (!payingReport[k]) payingReport[k] = r; }
   for (const r of filtered) {
-    const base = [r.date, workerLabel(r.worker), r.site, wtTh(r.workType, r.worker)];
+    const base = [r.date, workerLabel(r.worker), r.site, wtTh(r.workType, r.worker, r.date)];
     const pays = payingReport[r.worker + '|' + r.date] === r;
-    const money = pays ? [r.distanceKm || '', r.distanceKm ? r.distanceKm * 2 : '', wearRate(r.vehicle, rates, r.workType, r.worker), fieldMoney(r), Number(r.tollFee) || 0] : ['', '', '', '', ''];
+    const money = pays ? [r.distanceKm || '', r.distanceKm ? r.distanceKm * 2 : '', wearRate(r.vehicle, rates, r.workType, r.worker, r.date), fieldMoney(r), Number(r.tollFee) || 0] : ['', '', '', '', ''];
     const blankMoney = ['', '', '', '', ''];
     const hol = holidayOf(r.date);
     const tail = [r.timeIn, r.timeOut, vehicleTh(r.vehicle), ...money, r.note || '', hol ? hol.name : ''];
@@ -2872,15 +2931,30 @@ function App() {
       if (settings.bored_workers) {
         try { const b = JSON.parse(settings.bored_workers); if (Array.isArray(b)) boredWorkers = b; } catch (e) { /* nobody */ }
       }
-      if (settings.supervisor_workers) {
-        try { const s = JSON.parse(settings.supervisor_workers); if (s && typeof s === 'object') supervisorRates = s; } catch (e) { /* no supervisors */ }
-      }
+      // supervisors: the dated schedule, or — before one was ever saved — the old flat
+      // { nick: baht } list, treated as applying to every month
+      supervisorSchedule = {};
+      try {
+        if (settings.supervisor_schedule) supervisorSchedule = JSON.parse(settings.supervisor_schedule) || {};
+        else if (settings.supervisor_workers) {
+          const flat = JSON.parse(settings.supervisor_workers) || {};
+          for (const [nick, amt] of Object.entries(flat)) supervisorSchedule[nick] = [{ from: '2000-01', amt: Number(amt) }];
+        }
+      } catch (e) { supervisorSchedule = {}; }
       if (settings.full_clear_schedule) {
         try { const s = JSON.parse(settings.full_clear_schedule); if (s && typeof s === 'object') fullClearSchedule = s; } catch (e) { /* fall back to the per-worker flag */ }
       }
-      let carByWorker = {};
-      try { carByWorker = JSON.parse(settings.rate_car_by_worker || '{}') || {}; } catch (e) { carByWorker = {}; }
-      setRates({ car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100, carByWorker });
+      // wear rates: the dated schedule, or — before one was ever saved — the old single set of rates
+      // applying to every month
+      let ws = null;
+      try { ws = settings.wear_rate_schedule ? JSON.parse(settings.wear_rate_schedule) : null; } catch (e) { ws = null; }
+      if (!Array.isArray(ws) || !ws.length) {
+        let carByWorker = {};
+        try { carByWorker = JSON.parse(settings.rate_car_by_worker || '{}') || {}; } catch (e) { carByWorker = {}; }
+        ws = [{ from: '2000-01', car: Number(settings.rate_car) || 250, moto: Number(settings.rate_moto) || 100, carByWorker }];
+      }
+      wearSchedule = ws.slice().sort((a, b) => a.from.localeCompare(b.from));
+      setRates({ ...wearRatesFor(todayLocalIso()), schedule: wearSchedule }); // today's rates + the full history
       let adminUsers = [];
       try { adminUsers = JSON.parse(settings.admin_users || '[]'); } catch (e) { adminUsers = []; }
       if (!Array.isArray(adminUsers)) adminUsers = [];
@@ -3032,13 +3106,17 @@ function App() {
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message);
     await load();
   };
-  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear, supervisor, bored }) => {
-    // a renamed worker keeps their special car rate (it's keyed by nick)
-    const cbw = rates.carByWorker || {};
-    if (editingNick && editingNick !== nick && cbw[editingNick] != null) {
-      const moved = { ...cbw, [nick]: cbw[editingNick] };
-      delete moved[editingNick];
-      if (!(await setRatesRemote({ ...rates, carByWorker: moved }))) return;
+  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear, supervisor, supervisorFrom, bored }) => {
+    const renamed = editingNick && editingNick !== nick;
+    // a renamed worker keeps their special car rate in every dated set of rates (keyed by nick)
+    if (renamed && wearSchedule.some(s => s.carByWorker && s.carByWorker[editingNick] != null)) {
+      const moved = wearSchedule.map(s => {
+        if (!s.carByWorker || s.carByWorker[editingNick] == null) return s;
+        const cbw = { ...s.carByWorker, [nick]: s.carByWorker[editingNick] };
+        delete cbw[editingNick];
+        return { ...s, carByWorker: cbw };
+      });
+      if (!(await saveWearSchedule(moved))) return;
     }
     // who gets the เสาเข็มเจาะ options (settings list of nicks, follows a rename)
     const boredNext = boredWorkers.filter(n => n !== editingNick && n !== nick).concat(bored ? [nick] : []);
@@ -3047,14 +3125,28 @@ function App() {
       if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
       boredWorkers = boredNext;
     }
-    // หัวหน้างาน flat rate lives in settings; keyed by the (possibly renamed) nick
-    const sup = { ...supervisorRates };
-    if (editingNick) delete sup[editingNick];
-    if (supervisor != null) sup[nick] = supervisor; else delete sup[nick];
-    if (JSON.stringify(sup) !== JSON.stringify(supervisorRates)) {
-      const { error } = await DB.from('field_settings').upsert({ key: 'supervisor_workers', value: JSON.stringify(sup) });
-      if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
-      supervisorRates = sup;
+    // หัวหน้างาน: dated per worker (follows a rename). A new worker gets it for every month; a
+    // change for an existing worker starts at the month picked in the form
+    const supSched = { ...supervisorSchedule };
+    const before = editingNick ? supervisorFlat(editingNick) : null; // as of today
+    if (renamed && supSched[editingNick]) { supSched[nick] = supSched[editingNick]; delete supSched[editingNick]; }
+    if (!editingNick) {
+      if (supervisor != null) supSched[nick] = [{ from: '2000-01', amt: supervisor }];
+    } else if (supervisor !== before) {
+      const from = supervisorFrom || todayLocalIso().slice(0, 7);
+      const list = (supSched[nick] || [{ from: '2000-01', amt: null }]).filter(e => e.from !== from);
+      supSched[nick] = [...list, { from, amt: supervisor }].sort((a, b) => a.from.localeCompare(b.from));
+    }
+    if (JSON.stringify(supSched) !== JSON.stringify(supervisorSchedule)) {
+      const prev = supervisorSchedule;
+      supervisorSchedule = supSched;
+      const todayFlat = {}; // old single-value key, for pages not yet updated
+      for (const n of Object.keys(supSched)) { const a = supervisorFlat(n); if (a != null) todayFlat[n] = a; }
+      const { error } = await DB.from('field_settings').upsert([
+        { key: 'supervisor_schedule', value: JSON.stringify(supSched) },
+        { key: 'supervisor_workers', value: JSON.stringify(todayFlat) },
+      ]);
+      if (error) { supervisorSchedule = prev; return alert(saveErrorText(error)); }
     }
     // keep the dated history of the 100% clear right (and carry it over on a nick rename)
     let sched = { ...fullClearSchedule }, schedChanged = false;
@@ -3100,11 +3192,20 @@ function App() {
     setRateSchedule(sorted);
     return true;
   };
-  // returns whether it saved; the rates on screen only change once the database accepted them
-  const setRatesRemote = async (next) => {
-    const { error } = await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
+  // saves the whole dated wear-rate schedule; returns whether it saved, and the screen only changes
+  // once the database accepted it. Today's rates also go to the old single-value keys so a phone
+  // still on an older version of the page keeps working until it updates itself
+  const saveWearSchedule = async (schedule) => {
+    const sorted = schedule.slice().sort((a, b) => a.from.localeCompare(b.from));
+    const today = (() => { let cur = sorted[0]; for (const s of sorted) if (s.from <= todayLocalIso().slice(0, 7)) cur = s; return cur; })();
+    const { error } = await DB.from('field_settings').upsert([
+      { key: 'wear_rate_schedule', value: JSON.stringify(sorted) },
+      { key: 'rate_car', value: String(today.car) }, { key: 'rate_moto', value: String(today.moto) },
+      { key: 'rate_car_by_worker', value: JSON.stringify(today.carByWorker || {}) },
+    ]);
     if (error) { alert(saveErrorText(error)); return false; }
-    setRates(next);
+    wearSchedule = sorted;
+    setRates({ ...wearRatesFor(todayLocalIso()), schedule: sorted });
     return true;
   };
   // Admin PINs are checked by the database (supabase-security.sql): admin_login hands back a session
@@ -3197,7 +3298,7 @@ function App() {
   const openPrintReports = (filtered, filters) => {
     const sorted = [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
     const rows = sorted.flatMap(r => {
-      const wear = wearRate(r.vehicle, rates, r.workType, r.worker), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
+      const wear = wearRate(r.vehicle, rates, r.workType, r.worker, r.date), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: workerLabel(r.worker), site: r.site, time: r.timeIn ? r.timeIn + '–' + r.timeOut : '-', vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
       if (!r.items.length) return [{ ...base, pile: workTypeLabel(r), count: '-', cum: '-', rowSpan: 1, isFirst: true }];
       // a report with several pile items becomes several rows here — the shared columns (date/site/
@@ -3213,7 +3314,7 @@ function App() {
     let wear = 0, field = 0, toll = 0, distanceRoundTrip = 0, fieldDays = 0;
     for (const k of Object.keys(byWorkerDate)) {
       const fm = fieldMoney(byWorkerDate[k]);
-      wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType, byWorkerDate[k].worker);
+      wear += wearRate(byWorkerDate[k].vehicle, rates, byWorkerDate[k].workType, byWorkerDate[k].worker, byWorkerDate[k].date);
       field += fm;
       toll += Number(byWorkerDate[k].tollFee) || 0;
       distanceRoundTrip += (Number(byWorkerDate[k].distanceKm) || 0) * 2; // ไป-กลับ, display only — money still uses one-way (ขาไป)
@@ -3264,7 +3365,7 @@ function App() {
           {effectiveTab === 'reports' && <AdminReportsTab reports={reports} leaves={leaves} workers={workers} knownSites={knownSites} onEdit={r => { setEditingReport(r); setEditingAsAdmin(true); setWorker(r.worker); setView('form'); }} onDelete={deleteReport} onPrint={openPrintReports} onExportCsv={doExportCsv} onExportPerWorker={doExportPerWorker} monthLocks={monthLocks} canConfirmMonth={!!(admins.find(a => a.name === adminName) || {}).canConfirmMonth} onLockMonth={lockMonth} onConfirmDistance={confirmDistance} />}
           {effectiveTab === 'piles' && <AdminPilesTab reports={reports} finishedSites={finishedSites} onMarkFinished={markSiteFinished} onUnmarkFinished={unmarkSiteFinished} />}
           {effectiveTab === 'monthly' && <AdminMonthlyTab workers={workers} reports={reports} rates={rates} onPrint={openPrintMonthly} />}
-          {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSetRates={setRatesRemote} onPrint={openPrintCar} rateSchedule={rateSchedule} onSaveRateSchedule={saveRateSchedule} canEditRates={(() => { const me = admins.find(a => a.name === adminName); return !!me && (me.role === 'owner' || !!me.canConfirmMonth); })()} />}
+          {effectiveTab === 'car' && <AdminCarTab workers={workers} reports={reports} rates={rates} onSaveWearSchedule={saveWearSchedule} onPrint={openPrintCar} rateSchedule={rateSchedule} onSaveRateSchedule={saveRateSchedule} canEditRates={(() => { const me = admins.find(a => a.name === adminName); return !!me && (me.role === 'owner' || !!me.canConfirmMonth); })()} />}
           {effectiveTab === 'leaves' && <AdminLeavesTab workers={workers} leaves={leaves} onDelete={deleteLeave} />}
           {effectiveTab === 'workers' && <AdminWorkersTab workers={workers} reports={reports} onSave={saveWorker} onDelete={deleteWorker} />}
           {effectiveTab === 'holidays' && <AdminHolidaysTab holidays={holidays} canEdit={(() => { const me = admins.find(a => a.name === adminName); return !!me && (me.role === 'owner' || !!me.canConfirmMonth); })()} onSave={saveHolidays} />}

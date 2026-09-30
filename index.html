@@ -187,7 +187,7 @@ function fullClearOn(nick, iso, flag) {
 }
 // fullClearRate: some workers (e.g. the on-site supervisor) get 100% instead of the
 // usual clearPct for "เคลียร์พื้นที่หน้างาน" — see fullClearOn
-function fieldFactor(workType, fullClearRate, iso) { return workType === 'clear' ? (fullClearRate ? 1 : (Number(fieldRatesFor(iso).clearPct) || 0) / 100) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
+function fieldFactor(workType, fullClearRate, iso) { return (workType === 'clear' || workType === 'bored_move') ?(fullClearRate ? 1 : (Number(fieldRatesFor(iso).clearPct) || 0) / 100) : (workType === 'none' || workType === 'office' || workType === 'office_errand') ? 0 : 1; }
 // running 2 rigs doubles ค่าออกสนาม (Sundays/holidays don't — see countHolidayWork)
 function doubleFieldPay(r) { return !!r.dualRig; }
 // site supervisors (หัวหน้างาน): { nick: baht } from field_settings.supervisor_workers. Their link only
@@ -196,6 +196,30 @@ let supervisorRates = {};
 function supervisorFlat(nick) { return supervisorRates[nick] != null ? Number(supervisorRates[nick]) || 0 : null; }
 // a supervisor's 'clear' day is really inspecting the site, so it's labelled differently everywhere
 function clearLabel(nick) { return supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่หน้างาน'; }
+
+// เสาเข็มเจาะ (bored piles): only workers ticked "ดูหน้างานเข็มเจาะ" (field_settings.bored_workers) get
+// it in their form. work types: 'bored' = drilling (full pay, items of diameter/length/count),
+// 'bored_move' = moving the rig onto site (paid like เคลียร์พื้นที่หน้างาน, kept separate from it)
+let boredWorkers = [];
+const isBoredWorker = nick => boredWorkers.includes(nick);
+const BORED_SIZES = ['35', '40', '50', '60']; // diameter, cm
+const blankBoredItem = { size: '35', length: '', count: '' };
+const composeBoredStr = b => 'เข็มเจาะ Ø' + b.size + ' ซม. ยาว ' + Number(b.length) + ' ม.';
+const boredItemsFrom = (items, keepCount) => items.length
+  ? items.map(i => ({ size: String(i.dia || '35'), length: i.length != null ? String(i.length) : '', count: keepCount ? String(i.count) : '' }))
+  : [{ ...blankBoredItem }];
+// one place for the Thai name of a report's work type (lists, PDF, Excel)
+function workTypeLabel(r) {
+  switch (r.workType) {
+    case 'clear': return clearLabel(r.worker);
+    case 'office': return 'อยู่บริษัท ไม่ได้ออกหน้างาน';
+    case 'office_errand': return 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)';
+    case 'none': return 'ไปหน้างานแต่ไม่ได้ตอก';
+    case 'bored': return 'เสาเข็มเจาะ';
+    case 'bored_move': return 'ย้ายอุปกรณ์เข้าหน้างาน (เข็มเจาะ)';
+    default: return 'ตอกเสาเข็ม';
+  }
+}
 function fieldMoney(r) {
   const flat = supervisorFlat(r.worker);
   if (flat != null && r.workType === 'clear') return flat;
@@ -335,11 +359,21 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const supFlat = supervisorFlat(worker); // non-null = หัวหน้างาน: only clear/office, no distance, flat pay
   const isSup = supFlat != null;
   // supervisors don't fill in site or working hours, so theirs are saved blank
-  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: isSup ? '' : '08:00', timeOut: isSup ? '' : '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: isSup ? 'clear' : 'pile', note: '', dualRig: false };
+  const blank = { date: todayLocalIso(), site: '', items: [{ ...blankPileItem }], timeIn: isSup ? '' : '08:00', timeOut: isSup ? '' : '17:00', vehicle: 'car', distanceLegs: [{ km: '', note: '' }], tollFee: '', workType: isSup ? 'clear' : 'pile', note: '', dualRig: false, bored: [{ ...blankBoredItem }] };
+  const isBoredType = t => t === 'bored' || t === 'bored_move';
+  const canBored = isBoredWorker(worker) && !isSup;
+  // a report loaded into the form: bored-pile items go to f.bored, driven-pile items to f.items
+  const fromReport = (r, keepCounts) => {
+    const bored = isBoredType(r.workType);
+    return {
+      items: !bored && r.items.length ? r.items.map(i => keepCounts ? legacyPileItem(i) : { ...legacyPileItem(i), count: '' }) : [{ ...blankPileItem }],
+      bored: bored ? boredItemsFrom(r.items, keepCounts) : [{ ...blankBoredItem }],
+    };
+  };
   const legsFrom = (r) => (r.distanceLegs && r.distanceLegs.length) ? r.distanceLegs.map(l => ({ km: String(l.km), note: l.note || '' })) : [{ km: r.distanceKm ? String(r.distanceKm) : '', note: '' }];
   const [f, setF] = useState(editingReport ? {
     date: editingReport.date, site: editingReport.site,
-    items: editingReport.items.length ? editingReport.items.map(legacyPileItem) : [{ ...blankPileItem }],
+    ...fromReport(editingReport, true),
     timeIn: editingReport.timeIn, timeOut: editingReport.timeOut, vehicle: editingReport.vehicle,
     distanceLegs: legsFrom(editingReport), tollFee: editingReport.tollFee ? String(editingReport.tollFee) : '',
     workType: editingReport.workType || 'pile', note: editingReport.note || '', dualRig: !!editingReport.dualRig
@@ -384,7 +418,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
     if (editingReport) {
       setF({
         date: editingReport.date, site: editingReport.site,
-        items: editingReport.items.length ? editingReport.items.map(legacyPileItem) : [{ ...blankPileItem }],
+        ...fromReport(editingReport, true),
         timeIn: editingReport.timeIn, timeOut: editingReport.timeOut, vehicle: editingReport.vehicle,
         distanceLegs: legsFrom(editingReport), tollFee: editingReport.tollFee ? String(editingReport.tollFee) : '',
         workType: editingReport.workType || 'pile', note: editingReport.note || '', dualRig: !!editingReport.dualRig
@@ -404,10 +438,13 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
   const totalKm = f.distanceLegs.reduce((s, l) => s + (Number(l.km) || 0), 0);
 
   const submit = () => {
-    const items = f.workType === 'pile' ? f.items.map(i => ({ pile: composePileStr(i), count: Number(i.count) })).filter(i => i.pile && i.count > 0) : [];
+    const items = f.workType === 'pile' ? f.items.map(i => ({ pile: composePileStr(i), count: Number(i.count) })).filter(i => i.pile && i.count > 0)
+      : f.workType === 'bored' ? f.bored.map(b => ({ pile: composeBoredStr(b), count: Number(b.count), dia: Number(b.size), length: Number(b.length) })).filter(i => i.length > 0 && i.count > 0)
+      : [];
     const isOffice = f.workType === 'office' || f.workType === 'office_errand';
     if (!isOffice && !isSup && !f.site.trim()) return setError('กรุณากรอกชื่อหน่วยงาน');
     if (f.workType === 'pile' && !items.length) return setError('กรุณากรอกชนิดเสาและจำนวนตอกอย่างน้อย 1 รายการ');
+    if (f.workType === 'bored' && !items.length) return setError('กรุณาเลือกขนาด ใส่ความยาว และจำนวนเสาเข็มเจาะอย่างน้อย 1 รายการ');
     if (!isOffice && !isSup && !(totalKm > 0)) return setError('กรุณากรอกระยะทางไปหน้างาน (กม.)');
     if (f.workType === 'office_errand' && !f.note.trim()) return setError('กรุณากรอกเหตุผลที่ถูกใช้งานไปที่อื่น');
     const dup = myAll.some(r => r.date === f.date && (!editingReport || r.id !== editingReport.id));
@@ -418,7 +455,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
       distanceKm: totalKm,
       distanceLegs: f.distanceLegs.filter(l => Number(l.km) > 0).map(l => ({ km: Number(l.km), note: l.note.trim() })),
       tollFee: Number(f.tollFee) || 0,
-      workType: f.workType, note: f.note.trim(), dualRig: !!f.dualRig
+      workType: f.workType, note: f.note.trim(), dualRig: f.workType === 'pile' && !!f.dualRig
     };
     onSave(report);
     setError(''); setSavedFlash(true);
@@ -445,7 +482,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
         timeIn: lastReport.timeIn, timeOut: lastReport.timeOut, vehicle: lastReport.vehicle,
         distanceLegs: legsFrom(lastReport), tollFee: lastReport.tollFee ? String(lastReport.tollFee) : '',
         note: lastReport.note || '',
-        items: lastReport.items.length ? lastReport.items.map(i => ({ ...legacyPileItem(i), count: '' })) : [{ ...blankPileItem }]
+        ...fromReport(lastReport, false)
       }));
     } else {
       setF(blank);
@@ -583,7 +620,14 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
             <div style={{ ...labelStyle, marginBottom: 8 }}>ลักษณะงานวันนี้</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {WORK_TYPES.filter(wt => !isSup || wt.key === 'clear' || wt.key === 'office').map(wt => <PickerButton key={wt.key} active={wt.key === 'office' ? (f.workType === 'office' || f.workType === 'office_errand') : f.workType === wt.key} label={wt.key === 'clear' ? clearLabel(worker) : wt.label} sub={wt.key === 'clear' ? (isSup ? 'ค่าออกสนาม ' + num(supFlat) + ' บาท' : fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%') : wt.sub} onClick={() => setF(s => ({ ...s, workType: wt.key }))} />)}
+              {canBored && <PickerButton active={isBoredType(f.workType)} label="เสาเข็มเจาะ" sub="เจาะเสา / ย้ายอุปกรณ์" onClick={() => setF(s => ({ ...s, workType: isBoredType(s.workType) ? s.workType : 'bored' }))} />}
             </div>
+            {isBoredType(f.workType) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                <PickerButton active={f.workType === 'bored'} label="เจาะเสาเข็ม" sub="ค่าออกสนามเต็ม" onClick={() => setF(s => ({ ...s, workType: 'bored' }))} />
+                <PickerButton active={f.workType === 'bored_move'} label="ย้ายอุปกรณ์เข้าหน้างาน" sub={fullClear ? 'ค่าออกสนามเต็ม' : 'ค่าออกสนาม ' + fieldRatesFor(f.date).clearPct + '%'} onClick={() => setF(s => ({ ...s, workType: 'bored_move' }))} />
+              </div>
+            )}
             {(f.workType === 'office' || f.workType === 'office_errand') && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', marginTop: 10 }}>
                 <input type="checkbox" checked={f.workType === 'office_errand'} onChange={e => setF(s => ({ ...s, workType: e.target.checked ? 'office_errand' : 'office' }))} style={{ width: 18, height: 18, flexShrink: 0 }} />
@@ -591,6 +635,41 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
               </label>
             )}
           </div>
+
+          {f.workType === 'bored' && (
+            <div>
+              <div style={{ ...labelStyle, marginBottom: 8 }}>รายการเสาเข็มเจาะ</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {f.bored.map((b, i) => {
+                  const patchB = patch => setF(s => ({ ...s, bored: s.bored.map((x, j) => j === i ? { ...x, ...patch } : x) }));
+                  return (
+                    <div key={i} style={{ background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontSize: 13, color: '#9a958d' }}>ขนาดเส้นผ่านศูนย์กลาง</span>
+                        {f.bored.length > 1 && <button onClick={() => setF(s => ({ ...s, bored: s.bored.filter((_, j) => j !== i) }))} title="ลบ" style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, width: 30, height: 30, cursor: 'pointer' }}>✕</button>}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                        {BORED_SIZES.map(sz => (
+                          <button key={sz} onClick={() => patchB({ size: sz })} style={{ padding: '10px 0', borderRadius: 6, border: '1px solid ' + (b.size === sz ? '#e8762d' : '#4a4f58'), background: b.size === sz ? '#3a2a1e' : '#23262b', color: b.size === sz ? '#f0b98c' : '#c8c3bb', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>{sz}<span style={{ fontSize: 11, fontWeight: 500 }}> ซม.</span></button>
+                        ))}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, color: '#9a958d' }}>ความยาว (ม.)</span>
+                          <input type="number" min="0" step="0.5" inputMode="decimal" value={b.length} onChange={e => patchB({ length: e.target.value })} placeholder="เช่น 18" style={{ ...inputStyle, fontWeight: 700, textAlign: 'center', minWidth: 0 }} />
+                        </label>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                          <span style={{ fontSize: 13, color: '#9a958d' }}>จำนวน (ต้น)</span>
+                          <input type="number" min="0" inputMode="numeric" value={b.count} onChange={e => patchB({ count: e.target.value })} placeholder="0" style={{ ...inputStyle, fontWeight: 700, textAlign: 'center', minWidth: 0 }} />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={() => setF(s => ({ ...s, bored: [...s.bored, { ...blankBoredItem }] }))} style={{ marginTop: 10, background: 'none', border: '1px dashed #e8762d', color: '#e8762d', borderRadius: 6, padding: '10px 16px', fontWeight: 700, fontSize: 14, cursor: 'pointer', width: '100%' }}>+ เพิ่มรายการเสาเข็มเจาะ</button>
+            </div>
+          )}
 
           {f.workType === 'pile' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#1b1d21', border: '1px solid #3a3e45', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
@@ -803,7 +882,7 @@ function WorkerFormView({ worker, workerFull, reports, rates, knownSites, knownP
                 <div key={r.id} style={{ ...card, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: '#e8762d', fontWeight: 700 }}>{thDate(r.date)} · {r.site}</div>
-                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : (r.workType === 'clear' ? clearLabel(r.worker) : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก')}</div>
+                    <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 3 }}>{r.items.length ? r.items.map(i => i.pile + ' × ' + i.count + ' ต้น').join(' · ') : workTypeLabel(r)}</div>
                     <div style={{ fontSize: 12, color: '#9a958d', marginTop: 3 }}>{r.timeIn ? r.timeIn + '–' + r.timeOut + ' น. · ' : ''}{vehicleTh(r.vehicle)}</div>
                     {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 3, fontStyle: 'italic' }}>📝 {r.note}</div>}
                     {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (() => {
@@ -1355,7 +1434,7 @@ function AdminReportsTab({ reports, leaves, workers, knownSites, onEdit, onDelet
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{num(it.count)} ต้น <span style={{ color: '#9a958d', fontWeight: 500 }}>(สะสม {num(cumFor(reports, r.site, it.pile, r.date, null))})</span></span>
                 </div>
               ))}
-              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? (supervisorFlat(r.worker) != null ? 'ตรวจหน้างาน (หัวหน้างาน)' : 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)') : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : 'ไปหน้างานแต่ไม่ได้ตอก'}</div>}
+              {r.workType !== 'pile' && <div style={{ fontSize: 13, color: '#f0b98c', padding: '3px 0' }}>{r.workType === 'clear' ? (supervisorFlat(r.worker) != null ? 'ตรวจหน้างาน (หัวหน้างาน)' : 'เคลียร์พื้นที่หน้างาน (ไม่ได้ตอก)') : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น — ได้ค่าสึกหรอ)' : workTypeLabel(r)}</div>}
               <div style={{ fontSize: 12, color: '#9a958d', marginTop: 6 }}>{r.timeIn ? 'เข้า ' + r.timeIn + ' · ออก ' + r.timeOut + ' · ' : ''}{vehicleTh(r.vehicle)} · {r.distanceLegs && r.distanceLegs.length > 1 ? r.distanceLegs.map(l => l.km).join('+') + '=' + num(r.distanceKm) + ' กม.' : (r.distanceKm ? num(r.distanceKm) + ' กม.' : '-')}{!!r.tollFee && <> · ค่าทางด่วน {num(r.tollFee)} บาท</>}</div>
               {!!r.note && <div style={{ fontSize: 12, color: '#c8c3bb', marginTop: 4, fontStyle: 'italic' }}>📝 {r.note}</div>}
               {r.originalDistanceKm != null && Number(r.originalDistanceKm) !== Number(r.distanceKm) && (
@@ -1682,6 +1761,7 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
   const [origFullClear, setOrigFullClear] = useState(false); // the right as it is today, before this edit
   const [isSupervisor, setIsSupervisor] = useState(false);
   const [supervisorAmt, setSupervisorAmt] = useState('70');
+  const [isBored, setIsBored] = useState(false);
   const [fullClearFrom, setFullClearFrom] = useState(todayLocalIso().slice(0, 7));
   const [error, setError] = useState('');
   const fullClearToday = w => fullClearOn(w.nick, todayLocalIso(), w.full_clear_rate);
@@ -1711,10 +1791,10 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
     const changed = !!editingNick && fullClearRate !== origFullClear;
     if (changed && !fullClearFrom) return setError('กรุณาเลือกเดือนที่เริ่มมีผลของสิทธิ์เคลียร์พื้นที่ 100%');
     if (isSupervisor && !(Number(supervisorAmt) >= 0 && supervisorAmt !== '')) return setError('กรุณาใส่ค่าออกสนามของหัวหน้างาน');
-    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear, supervisor: isSupervisor ? Number(supervisorAmt) : null });
+    onSave({ fullName: full, nick: n, editingNick, fullClearRate, fullClearFrom: changed ? fullClearFrom : null, origFullClear, supervisor: isSupervisor ? Number(supervisorAmt) : null, bored: isBored });
     cancel();
   };
-  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(false); setSupervisorAmt('70'); setError(''); };
+  const cancel = () => { setFullName(''); setNick(''); setEditingNick(null); setFullClearRate(false); setOrigFullClear(false); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(false); setSupervisorAmt('70'); setIsBored(false); setError(''); };
 
   return (
     <div>
@@ -1753,6 +1833,10 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           ได้ค่าเคลียร์พื้นที่หน้างานเต็ม 100% (หัวหน้าดูแลหน้างานโดยตรง)
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', flexWrap: 'wrap' }}>
+          <input type="checkbox" checked={isBored} onChange={e => setIsBored(e.target.checked)} />
+          ดูหน้างานเข็มเจาะ — ลิงก์มีเพิ่ม "เสาเข็มเจาะ" (เจาะเสา ขนาด 35/40/50/60 ซม. + ความยาว · ย้ายอุปกรณ์เข้าหน้างาน)
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, color: '#c8c3bb', cursor: 'pointer', flexWrap: 'wrap' }}>
           <input type="checkbox" checked={isSupervisor} onChange={e => setIsSupervisor(e.target.checked)} />
           หัวหน้างาน — ลิงก์มีแค่ "ตรวจหน้างาน" กับ "อยู่บริษัท" ไม่ต้องกรอกระยะทาง
           {isSupervisor && <>· เคลียร์หน้างานได้ <input type="number" min="0" value={supervisorAmt} onChange={e => setSupervisorAmt(e.target.value)} style={{ ...inputStyle, width: 80, padding: '5px 8px', fontSize: 13, textAlign: 'center', fontWeight: 700 }} /> บาท/วัน ทุกระยะทาง</>}
@@ -1772,12 +1856,12 @@ function AdminWorkersTab({ workers, reports, onSave, onDelete }) {
           <div key={w.nick} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, padding: '12px 18px', borderBottom: '1px solid #3a3e45', alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{w.full_name} <span style={{ color: '#e8762d', fontWeight: 600, fontSize: 13 }}>({w.nick})</span></div>
-              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (ตรวจหน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
+              <div style={{ fontSize: 12, color: '#9a958d' }}>มีรายงาน {reports.filter(r => r.worker === w.nick).length} รายการ{isBoredWorker(w.nick) ? ' · ดูหน้างานเข็มเจาะ' : ''}{supervisorFlat(w.nick) != null ? ' · หัวหน้างาน (ตรวจหน้างาน ' + num(supervisorFlat(w.nick)) + ' บาท/วัน)' : ''}{fullClearToday(w) ? ' · ค่าเคลียร์พื้นที่ 100%' : ''}{lastFullClearChange(w.nick) ? ' (' + (lastFullClearChange(w.nick).on ? 'ได้' : 'ยกเลิก') + 'ตั้งแต่ ' + monthLabel(lastFullClearChange(w.nick).from) + ')' : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => setQrFor(w)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>QR</button>
               <button onClick={() => copyLink(w.nick)} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>{copied === w.nick ? 'คัดลอกแล้ว ✓' : 'คัดลอกลิงก์'}</button>
-              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(supervisorFlat(w.nick) != null); setSupervisorAmt(String(supervisorFlat(w.nick) ?? 70)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
+              <button onClick={() => { setFullName(w.full_name); setNick(w.nick); setEditingNick(w.nick); setFullClearRate(fullClearToday(w)); setOrigFullClear(fullClearToday(w)); setFullClearFrom(todayLocalIso().slice(0, 7)); setIsSupervisor(supervisorFlat(w.nick) != null); setSupervisorAmt(String(supervisorFlat(w.nick) ?? 70)); setIsBored(isBoredWorker(w.nick)); setError(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#e8762d', borderRadius: 5, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>แก้ไข</button>
               <button onClick={() => {
                 const n = reports.filter(r => r.worker === w.nick).length;
                 const msg = n > 0 ? 'ลบ ' + w.nick + '? (รายงานเดิม ' + n + ' รายการจะยังอยู่ในระบบ)' : 'ลบ ' + w.nick + '?';
@@ -2596,7 +2680,7 @@ async function exportXlsxPerWorker(filtered, reports, rates, leaves, workers, pe
 function buildExportRows(filtered, reports, rates, leaves = [], workers = []) {
   const workerLabel = (nick) => { const w = workers.find(w => w.nick === nick); return w ? w.full_name + ' (' + nick + ')' : nick; };
   const rows = [['วันที่', 'พนักงาน', 'หน่วยงาน', 'ลักษณะงาน', 'ชนิดเสา', 'จำนวนตอก', 'ยอดสะสม', 'เวลาเข้า', 'เวลาออก', 'รถที่ใช้', 'ระยะทาง(กม.)', 'ระยะทางไป-กลับ(กม.)', 'ค่าสึกหรอ', 'ค่าออกสนาม', 'ค่าทางด่วน', 'หมายเหตุ', 'ทำงานวันหยุด']];
-  const wtTh = (w, nick) => w === 'clear' ? (supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่') : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ตอกเสาเข็ม';
+  const wtTh = (w, nick) => w === 'clear' ? (supervisorFlat(nick) != null ? 'ตรวจหน้างาน' : 'เคลียร์พื้นที่') : w === 'none' ? 'ไปแต่ไม่ได้ตอก' : w === 'office' ? 'อยู่บริษัท' : w === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : w === 'bored' || w === 'bored_move' ? workTypeLabel({ workType: w }) : 'ตอกเสาเข็ม';
   const dataRows = [];
   // money is paid once per worker+date (same rule as openPrintReports' totals) — extra pile items or a
   // second report on the same day get blank distance/money cells so summing the columns doesn't double it
@@ -2743,6 +2827,9 @@ function App() {
         try { const s = JSON.parse(settings.field_rate_schedule); if (Array.isArray(s) && s.length) fieldRateSchedule = s.slice().sort((a, b) => a.from.localeCompare(b.from)); } catch (e) { /* keep the default rates */ }
       }
       setRateSchedule(fieldRateSchedule);
+      if (settings.bored_workers) {
+        try { const b = JSON.parse(settings.bored_workers); if (Array.isArray(b)) boredWorkers = b; } catch (e) { /* nobody */ }
+      }
       if (settings.supervisor_workers) {
         try { const s = JSON.parse(settings.supervisor_workers); if (s && typeof s === 'object') supervisorRates = s; } catch (e) { /* no supervisors */ }
       }
@@ -2872,7 +2959,14 @@ function App() {
     if (error) return alert('ยกเลิกไม่สำเร็จ: ' + error.message);
     await load();
   };
-  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear, supervisor }) => {
+  const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear, supervisor, bored }) => {
+    // who gets the เสาเข็มเจาะ options (settings list of nicks, follows a rename)
+    const boredNext = boredWorkers.filter(n => n !== editingNick && n !== nick).concat(bored ? [nick] : []);
+    if (JSON.stringify([...boredNext].sort()) !== JSON.stringify([...boredWorkers].sort())) {
+      const { error } = await DB.from('field_settings').upsert({ key: 'bored_workers', value: JSON.stringify(boredNext) });
+      if (error) return alert('บันทึกไม่สำเร็จ: ' + error.message);
+      boredWorkers = boredNext;
+    }
     // หัวหน้างาน flat rate lives in settings; keyed by the (possibly renamed) nick
     const sup = { ...supervisorRates };
     if (editingNick) delete sup[editingNick];
@@ -2986,7 +3080,7 @@ function App() {
     const rows = sorted.flatMap(r => {
       const wear = wearRate(r.vehicle, rates, r.workType, r.worker), field = fieldMoney(r), toll = Number(r.tollFee) || 0;
       const base = { dateTh: thDate(r.date), nick: workerLabel(r.worker), site: r.site, time: r.timeIn ? r.timeIn + '–' + r.timeOut : '-', vehicle: vehicleTh(r.vehicle) + (r.distanceKm ? ' / ' + r.distanceKm + ' กม.' : ''), wear, field, money: wear + field, toll };
-      if (!r.items.length) return [{ ...base, pile: r.workType === 'clear' ? clearLabel(r.worker) : r.workType === 'office' ? 'อยู่บริษัท ไม่ได้ออกหน้างาน' : r.workType === 'office_errand' ? 'อยู่บริษัท (ถูกใช้งานไปที่อื่น)' : 'ไปหน้างานแต่ไม่ได้ตอก', count: '-', cum: '-', rowSpan: 1, isFirst: true }];
+      if (!r.items.length) return [{ ...base, pile: workTypeLabel(r), count: '-', cum: '-', rowSpan: 1, isFirst: true }];
       // a report with several pile items becomes several rows here — the shared columns (date/site/
       // time/vehicle/money) are only rendered on the first row and merged (rowSpan) across the rest
       return r.items.map((it, idx) => ({ ...base, pile: it.pile, count: num(it.count), cum: num(cumFor(reports, r.site, it.pile, r.date, null)), rowSpan: r.items.length, isFirst: idx === 0 }));

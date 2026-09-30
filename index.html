@@ -357,7 +357,12 @@ function BackupCard() {
 function saveErrorText(error) {
   const msg = (error && error.message) || '';
   if (/fetch|network|Load failed/i.test(msg)) return 'ส่งข้อมูลไม่สำเร็จ — สัญญาณอินเทอร์เน็ตอาจไม่ดี\nข้อมูลที่กรอกยังอยู่ ลองกดบันทึกอีกครั้ง';
-  if (/row-level security/i.test(msg)) return 'บันทึกไม่ได้ — เดือนนี้ถูกล็อกแล้ว (ยืนยันยอดแล้ว) กรุณาติดต่อแอดมิน';
+  // refused by the database's access rules: for a worker that's a locked month, for an admin page
+  // it means the login session is gone
+  const asAdmin = (() => { try { return !!(adminToken() || sessionStorage.getItem('field_admin_authed')); } catch (e) { return false; } })();
+  if (/row-level security/i.test(msg)) return asAdmin
+    ?'บันทึกไม่ได้ — การเข้าสู่ระบบแอดมินหมดเวลา กรุณากด "ออกจากระบบ" แล้วใส่รหัส PIN เข้าใหม่'
+    : 'บันทึกไม่ได้ — เดือนนี้ถูกล็อกแล้ว (ยืนยันยอดแล้ว) กรุณาติดต่อแอดมิน';
   return 'บันทึกไม่สำเร็จ: ' + msg + '\nข้อมูลที่กรอกยังอยู่ ลองกดบันทึกอีกครั้ง';
 }
 
@@ -2100,6 +2105,62 @@ function FieldRatesCard({ month, monthTh, schedule, canEdit, onSave }) {
   );
 }
 
+// ค่าสึกหรอ rates, edited as a draft and saved with a button — typing used to save every keystroke,
+// so a half-typed value (or a failed save) went live without anyone noticing
+function WearRatesCard({ rates, workers, onSave }) {
+  const toDraft = r => ({ car: String(r.car), moto: String(r.moto), carByWorker: { ...(r.carByWorker || {}) } });
+  const [draft, setDraft] = useState(() => toDraft(rates));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { setDraft(toDraft(rates)); }, [rates]); // re-sync after a save / reload
+  const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(rates));
+  const byWorker = draft.carByWorker;
+  const numStyle = { background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' };
+  const save = async () => {
+    const vals = [draft.car, draft.moto, ...Object.values(byWorker)];
+    if (vals.some(v => v === '' || !(Number(v) >= 0))) return setMsg('กรุณาใส่ตัวเลขให้ครบทุกช่อง');
+    setSaving(true); setMsg('');
+    const ok = await onSave({ car: Number(draft.car), moto: Number(draft.moto), carByWorker: Object.fromEntries(Object.entries(byWorker).map(([k, v]) => [k, Number(v)])) });
+    setSaving(false);
+    setMsg(ok ? '✓ บันทึกแล้ว' : '');
+  };
+  return (
+    <div style={{ ...card, padding: '14px 18px' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', marginBottom: 10 }}>ค่าสึกหรอต่อวัน (รถส่วนตัว)</div>
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>รถยนต์ <input type="number" min="0" value={draft.car} onChange={e => { setDraft({ ...draft, car: e.target.value }); setMsg(''); }} style={numStyle} /> บาท</label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>มอเตอร์ไซค์ <input type="number" min="0" value={draft.moto} onChange={e => { setDraft({ ...draft, moto: e.target.value }); setMsg(''); }} style={numStyle} /> บาท</label>
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', margin: '14px 0 8px' }}>อัตรารถยนต์เฉพาะคน</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {Object.keys(byWorker).map(nick => {
+          const w = workers.find(w => w.nick === nick);
+          return (
+            <div key={nick} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, flexWrap: 'wrap' }}>
+              <span style={{ minWidth: 120 }}>{w ? w.full_name + ' (' + nick + ')' : nick}</span>
+              <input type="number" min="0" value={byWorker[nick]} onChange={e => { setDraft({ ...draft, carByWorker: { ...byWorker, [nick]: e.target.value } }); setMsg(''); }} style={numStyle} /> บาท
+              <button onClick={() => { const next = { ...byWorker }; delete next[nick]; setDraft({ ...draft, carByWorker: next }); setMsg(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+              {!w && <span style={{ fontSize: 12, color: '#f0b3a8', width: '100%' }}>⚠ ไม่พบพนักงานชื่อเล่น "{nick}" ในระบบ อัตรานี้จึงไม่มีผลกับใคร — กดลบ แล้วเพิ่มใหม่จากรายชื่อด้านล่าง</span>}
+            </div>
+          );
+        })}
+        <select value="" onChange={e => { if (e.target.value) { setDraft({ ...draft, carByWorker: { ...byWorker, [e.target.value]: draft.car } }); setMsg(''); } }} style={{ ...inputStyle, width: 'auto', padding: '8px 10px', fontSize: 13 }}>
+          <option value="">+ เพิ่มพนักงานที่ได้อัตราพิเศษ</option>
+          {workers.filter(w => byWorker[w.nick] == null).map(w => <option key={w.nick} value={w.nick}>{w.full_name} ({w.nick})</option>)}
+        </select>
+      </div>
+      {(dirty || msg) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          {dirty && <button onClick={save} disabled={saving} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>}
+          {dirty && !saving && <button onClick={() => { setDraft(toDraft(rates)); setMsg(''); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
+          {dirty && <span style={{ fontSize: 12, color: '#f0b98c' }}>มีการแก้ไขที่ยังไม่ได้บันทึก</span>}
+          {msg && <span style={{ fontSize: 13, color: msg.startsWith('✓') ? '#6dbf5b' : '#f0b3a8' }}>{msg}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminCarTab({ workers, reports, rates, onSetRates, onPrint, rateSchedule, onSaveRateSchedule, canEditRates }) {
   const [month, setMonth] = useState(todayLocalMonth());
   const monthReports = reports.filter(r => r.date.slice(0, 7) === month);
@@ -2130,30 +2191,7 @@ function AdminCarTab({ workers, reports, rates, onSetRates, onPrint, rateSchedul
       </div>
 
       <div className="rg-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-        <div style={{ ...card, padding: '14px 18px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', marginBottom: 10 }}>ค่าสึกหรอต่อวัน (รถส่วนตัว)</div>
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>รถยนต์ <input type="number" min="0" value={rates.car} onChange={e => onSetRates({ ...rates, car: e.target.value })} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' }} /> บาท</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>มอเตอร์ไซค์ <input type="number" min="0" value={rates.moto} onChange={e => onSetRates({ ...rates, moto: e.target.value })} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' }} /> บาท</label>
-          </div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#c8c3bb', margin: '14px 0 8px' }}>อัตรารถยนต์เฉพาะคน</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {Object.keys(carByWorker).map(nick => {
-              const w = workers.find(w => w.nick === nick);
-              return (
-                <div key={nick} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, flexWrap: 'wrap' }}>
-                  <span style={{ minWidth: 120 }}>{w ? w.full_name + ' (' + nick + ')' : nick}</span>
-                  <input type="number" min="0" value={carByWorker[nick]} onChange={e => onSetRates({ ...rates, carByWorker: { ...carByWorker, [nick]: e.target.value } })} style={{ background: '#23262b', border: '1px solid #4a4f58', color: '#e9e6e1', borderRadius: 6, padding: '8px 10px', fontSize: 15, fontWeight: 700, width: 80, textAlign: 'center' }} /> บาท
-                  <button onClick={() => { const next = { ...carByWorker }; delete next[nick]; onSetRates({ ...rates, carByWorker: next }); }} style={{ background: 'none', border: '1px solid #4a4f58', color: '#9a958d', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
-                </div>
-              );
-            })}
-            <select value="" onChange={e => e.target.value && onSetRates({ ...rates, carByWorker: { ...carByWorker, [e.target.value]: rates.car } })} style={{ ...inputStyle, width: 'auto', padding: '8px 10px', fontSize: 13 }}>
-              <option value="">+ เพิ่มพนักงานที่ได้อัตราพิเศษ</option>
-              {workers.filter(w => carByWorker[w.nick] == null).map(w => <option key={w.nick} value={w.nick}>{w.full_name} ({w.nick})</option>)}
-            </select>
-          </div>
-        </div>
+        <WearRatesCard rates={rates} workers={workers} onSave={onSetRates} />
         <FieldRatesCard month={month} monthTh={monthTh} schedule={rateSchedule} canEdit={canEditRates} onSave={onSaveRateSchedule} />
       </div>
 
@@ -2960,6 +2998,13 @@ function App() {
     await load();
   };
   const saveWorker = async ({ fullName, nick, editingNick, fullClearRate, fullClearFrom, origFullClear, supervisor, bored }) => {
+    // a renamed worker keeps their special car rate (it's keyed by nick)
+    const cbw = rates.carByWorker || {};
+    if (editingNick && editingNick !== nick && cbw[editingNick] != null) {
+      const moved = { ...cbw, [nick]: cbw[editingNick] };
+      delete moved[editingNick];
+      if (!(await setRatesRemote({ ...rates, carByWorker: moved }))) return;
+    }
     // who gets the เสาเข็มเจาะ options (settings list of nicks, follows a rename)
     const boredNext = boredWorkers.filter(n => n !== editingNick && n !== nick).concat(bored ? [nick] : []);
     if (JSON.stringify([...boredNext].sort()) !== JSON.stringify([...boredWorkers].sort())) {
@@ -3020,9 +3065,12 @@ function App() {
     setRateSchedule(sorted);
     return true;
   };
+  // returns whether it saved; the rates on screen only change once the database accepted them
   const setRatesRemote = async (next) => {
+    const { error } = await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
+    if (error) { alert(saveErrorText(error)); return false; }
     setRates(next);
-    await DB.from('field_settings').upsert([{ key: 'rate_car', value: String(next.car) }, { key: 'rate_moto', value: String(next.moto) }, { key: 'rate_car_by_worker', value: JSON.stringify(next.carByWorker || {}) }]);
+    return true;
   };
   // Admin PINs are checked by the database (supabase-security.sql): admin_login hands back a session
   // token that fetch attaches to every request. Until that SQL has been run the functions don't

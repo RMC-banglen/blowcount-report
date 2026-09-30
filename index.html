@@ -298,6 +298,61 @@ function composePileStr(it) {
 const blankPileItem = { mode: 'picker', shape: 'I', standard: 'มอก', size: '', sizeCustom: '', length: '', joint: 'double', jointCount: '2', extra: '', pileText: '', count: '' };
 const legacyPileItem = (i) => ({ ...blankPileItem, mode: 'text', pileText: i.pile, count: String(i.count) });
 
+// Supabase's free plan keeps no backups, so the whole database can be downloaded as one .xlsx — a
+// sheet per table, JSON columns as text — readable in Excel and complete enough to restore from
+const BACKUP_TABLES = ['field_workers', 'field_reports', 'field_leaves', 'field_settings', 'field_month_locks', 'field_finished_sites'];
+async function downloadBackup() {
+  const wb = XLSX.utils.book_new();
+  let rows = 0;
+  for (const t of BACKUP_TABLES) {
+    const all = [];
+    for (let from = 0; ; from += 1000) { // PostgREST returns at most 1000 rows per request
+      const { data, error } = await DB.from(t).select('*').range(from, from + 999);
+      if (error) throw new Error(t + ': ' + error.message);
+      all.push(...data);
+      if (data.length < 1000) break;
+    }
+    rows += all.length;
+    const flat = all.map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v !== null && typeof v === 'object' ? JSON.stringify(v) : v])));
+    XLSX.utils.book_append_sheet(wb, flat.length ? XLSX.utils.json_to_sheet(flat) : XLSX.utils.aoa_to_sheet([['(ว่าง)']]), t.replace('field_', ''));
+  }
+  XLSX.writeFile(wb, 'สำรองข้อมูล_รายงานตอกเสาเข็ม_' + todayLocalIso() + '.xlsx');
+  try { localStorage.setItem('last_backup', todayLocalIso()); } catch (e) { /* private mode */ }
+  return rows;
+}
+function daysSinceBackup() {
+  let last = null;
+  try { last = localStorage.getItem('last_backup'); } catch (e) { /* private mode */ }
+  if (!last) return null;
+  const [y, m, d] = last.split('-').map(Number), [ty, tm, td] = todayLocalIso().split('-').map(Number);
+  return Math.round((new Date(ty, tm - 1, td) - new Date(y, m - 1, d)) / 86400000);
+}
+function BackupCard() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const days = daysSinceBackup();
+  const run = async () => {
+    setBusy(true); setMsg('');
+    try { const n = await downloadBackup(); setMsg('ดาวน์โหลดแล้ว ' + num(n) + ' รายการ — เก็บไฟล์ไว้ในคอมหรือ Google Drive'); }
+    catch (e) { setMsg('สำรองไม่สำเร็จ: ' + e.message); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ ...card, padding: '14px 18px', marginBottom: 18, borderLeft: '4px solid ' + (days == null || days > 30 ? '#d95b4a' : '#6dbf5b') }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>สำรองข้อมูล</div>
+          <div style={{ fontSize: 13, color: '#9a958d', marginTop: 2 }}>
+            {days == null ? 'ยังไม่เคยสำรองจากเครื่องนี้' : days === 0 ? 'สำรองล่าสุด: วันนี้' : 'สำรองล่าสุด: ' + days + ' วันก่อน'} · แนะนำเดือนละครั้ง (หลังยืนยันยอดเดือน)
+          </div>
+        </div>
+        <button onClick={run} disabled={busy} style={{ background: '#e8762d', border: 'none', color: '#1b1d21', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>{busy ? 'กำลังดาวน์โหลด…' : '↓ สำรองข้อมูลทั้งหมด'}</button>
+      </div>
+      {msg && <div style={{ fontSize: 13, color: '#c8c3bb', marginTop: 8 }}>{msg}</div>}
+    </div>
+  );
+}
+
 // a save error in plain Thai, telling the worker their input is still there to retry
 function saveErrorText(error) {
   const msg = (error && error.message) || '';
@@ -1153,6 +1208,7 @@ function AdminAdminsTab({ admins, currentName, onAdd, onDelete, onEdit }) {
         <div style={{ fontSize: 13, color: '#9a958d', marginTop: 3 }}>คุณล็อกอินเป็น: <b style={{ color: '#e8762d' }}>{currentName}</b>{isOwner && <span style={{ color: '#6dbf5b', fontWeight: 700 }}> (ผู้ใช้หลัก)</span>} · ผู้ใช้ทั้งหมด {admins.length} คน</div>
         {!isOwner && <div style={{ fontSize: 12, color: '#9a958d', marginTop: 4 }}>เฉพาะผู้ใช้หลักเท่านั้นที่เพิ่ม/ลบผู้ใช้ได้</div>}
       </div>
+      <BackupCard />
 
       {isOwner && (
         <div style={{ marginBottom: 18 }}>

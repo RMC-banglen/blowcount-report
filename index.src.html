@@ -2989,6 +2989,14 @@ function App() {
         document.title = 'รายงาน ' + u;
         const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
         if (appTitle) appTitle.setAttribute('content', 'รายงาน ' + u);
+      } else if (!/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) && !(/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) && !document.querySelector('link[rel="manifest"]')) {
+        // admin page on a computer: offer Chrome/Edge's "ติดตั้ง" so it opens in its own window like a
+        // program. Never on worker links or phones/tablets (iPadOS reports as a Mac with touch) — there
+        // a manifest would name every worker's home-screen icon the same and an installed app would
+        // capture their links
+        const link = document.createElement('link');
+        link.rel = 'manifest'; link.href = './admin-manifest.json';
+        document.head.appendChild(link);
       }
     } catch (e) {
       console.error(e);
